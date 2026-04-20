@@ -1,14 +1,14 @@
 {
-  "name": "serverless-plugin-canary-deployments",
+  "name": "serverless-plugin-lambda-deployments",
   "engines": {
     "node": ">=4.0"
   },
   "version": "0.8.0",
   "description": "A Serverless plugin to implement canary deployment of Lambda functions",
-  "main": "serverless-plugin-canary-deployments.js",
+  "main": "serverless-plugin-lambda-deployments.js",
   "scripts": {
-    "test": "npm run lint && NODE_ENV=test ./node_modules/mocha/bin/mocha $(find ./ -name '*.test.js' -not -path '.*/node_modules/*')",
-    "watch": "NODE_ENV=test ./node_modules/mocha/bin/mocha -w $(find ./ -name '*.test.js' -not -path '*/node_modules/*')",
+    "test": "npm run lint && NODE_ENV=test ./node_modules/mocha/bin/mocha.js $(find ./ -name '*.test.js' -not -path '.*/node_modules/*')",
+    "watch": "NODE_ENV=test ./node_modules/mocha/bin/mocha.js -w $(find ./ -name '*.test.js' -not -path '*/node_modules/*')",
     "lint": "standard"
   },
   "author": "David García <davidgf1987@gmail.com>",
@@ -18,20 +18,19 @@
   ],
   "license": "ISC",
   "repository": {
-    "url": "https://github.com/davidgf/serverless-plugin-canary-deployments.git",
+    "url": "https://github.com/davidgf/serverless-plugin-lambda-deployments.git",
     "type": "git"
   },
   "dependencies": {
-    "flat": "^4.1.0",
-    "lodash": "^4.17.20",
-    "omit-empty": "^0.4.1"
+    "flat": "^6.0.1",
+    "lodash": "^4.18.1",
+    "omit-empty": "^1.0.0"
   },
   "devDependencies": {
-    "chai": "^4.2.0",
+    "chai": "^4.5.0",
     "get-installed-path": "^4.0.8",
-    "husky": "^3.0.1",
-    "mocha": "^8.2.1",
-    "serverless": "^2.22.0",
+    "mocha": "^11.7.5",
+    "serverless": "^3.40.0",
     "standard": "*"
   },
   "peerDependencies": {
@@ -45,11 +44,6 @@
     "gradual",
     "deployments"
   ],
-  "husky": {
-    "hooks": {
-      "pre-push": "npm test"
-    }
-  },
   "standard": {
     "globals": [
       "describe",
