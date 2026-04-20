@@ -18,7 +18,7 @@ describe('ServerlessLambdaDeployments', () => {
   const stage = 'dev'
   const options = { stage }
 
-  describe('addCanaryDeploymentResources', () => {
+  describe('addDeploymentResources', () => {
     const testCaseFiles = fs.readdirSync(fixturesPath)
     const getTestCaseName = _.pipe(_.split('.'), _.head)
     const testCaseFileType = _.pipe(_.split('.'), _.get('[1]'))
@@ -42,7 +42,7 @@ describe('ServerlessLambdaDeployments', () => {
         serverless.service.provider.compiledCloudFormationTemplate = input
         serverless.setProvider('aws', new AwsProvider(serverless, options))
         const plugin = new ServerlessLambdaDeployments(serverless, options)
-        plugin.addCanaryDeploymentResources()
+        plugin.addDeploymentResources()
         expect(serverless.service.provider.compiledCloudFormationTemplate).to.deep.equal(output)
       })
     })

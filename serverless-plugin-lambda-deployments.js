@@ -1,3 +1,5 @@
+'use strict'
+
 const _ = require('lodash/fp')
 const { flatten: flattenObject } = require('flat')
 const CfGenerators = require('./lib/CfTemplateGenerators')
@@ -10,6 +12,7 @@ const slsHasConfigSchema = sls =>
   sls.configSchemaHandler &&
   sls.configSchemaHandler.defineCustomProperties &&
   sls.configSchemaHandler.defineFunctionProperties
+
 class ServerlessLambdaDeployments {
   constructor (serverless, options) {
     this.serverless = serverless
@@ -18,15 +21,9 @@ class ServerlessLambdaDeployments {
     this.naming = this.awsProvider.naming
     this.service = this.serverless.service
     this.hooks = {
-      'after:aws:package:finalize:mergeCustomProviderResources': this.addCanaryDeploymentResources.bind(this)
+      'after:aws:package:finalize:mergeCustomProviderResources': this.addDeploymentResources.bind(this)
     }
     this.addConfigSchema()
-  }
-
-  get codeDeployAppName () {
-    const stackName = this.naming.getStackName()
-    const normalizedStackName = this.naming.normalizeNameToAlphaNumericOnly(stackName)
-    return `${normalizedStackName}DeploymentApplication`
   }
 
   get compiledTpl () {
@@ -53,69 +50,20 @@ class ServerlessLambdaDeployments {
     }
   }
 
-  addCanaryDeploymentResources () {
-    if (this.shouldDeployDeployGradually()) {
-      const codeDeployApp = this.buildCodeDeployApp()
+  addDeploymentResources () {
+    if (this.shouldDeploy()) {
       const functionsResources = this.buildFunctionsResources()
-      const codeDeployRole = this.buildCodeDeployRole(this.areTriggerConfigurationsSet(functionsResources))
-      const executionRole = this.buildExecutionRole()
-      Object.assign(
-        this.compiledTpl.Resources,
-        codeDeployApp,
-        codeDeployRole,
-        executionRole,
-        ...functionsResources
-      )
+      Object.assign(this.compiledTpl.Resources, ...functionsResources)
     }
   }
 
-  areTriggerConfigurationsSet (functionsResources) {
-    // Checking if the template has trigger configurations.
-    for (const resource of functionsResources) {
-      for (const key of Object.keys(resource)) {
-        if (resource[key].Type === 'AWS::CodeDeploy::DeploymentGroup') {
-          if (resource[key].Properties.TriggerConfigurations) {
-            return true
-          }
-        }
-      }
-    }
-    return false
-  }
-
-  shouldDeployDeployGradually () {
+  shouldDeploy () {
     return this.withDeploymentPreferencesFns.length > 0 && this.currentStageEnabled()
   }
 
   currentStageEnabled () {
     const enabledStages = _.getOr([], 'stages', this.globalSettings)
     return _.isEmpty(enabledStages) || _.includes(this.currentStage, enabledStages)
-  }
-
-  buildExecutionRole () {
-    const logicalName = this.naming.getRoleLogicalId()
-
-    const inputRole = this.compiledTpl.Resources[logicalName]
-    if (!inputRole) {
-      return
-    }
-    const hasHook = _.pipe(
-      this.getDeploymentSettingsFor.bind(this),
-      settings => settings.preTrafficHook || settings.postTrafficHook
-    )
-    const getDeploymentGroup = _.pipe(
-      this.getFunctionName.bind(this),
-      this.getFunctionDeploymentGroupId.bind(this),
-      this.getDeploymentGroupName.bind(this)
-    )
-    const deploymentGroups = _.pipe(
-      _.filter(hasHook),
-      _.map(getDeploymentGroup)
-    )(this.withDeploymentPreferencesFns)
-
-    const outputRole = CfGenerators.iam.buildExecutionRoleWithCodeDeploy(inputRole, this.codeDeployAppName, deploymentGroups)
-
-    return { [logicalName]: outputRole }
   }
 
   buildFunctionsResources () {
@@ -128,73 +76,20 @@ class ServerlessLambdaDeployments {
   buildFunctionResources (serverlessFnName) {
     const functionName = this.naming.getLambdaLogicalId(serverlessFnName)
     const deploymentSettings = this.getDeploymentSettingsFor(serverlessFnName)
-    const deploymentGrTpl = this.buildFunctionDeploymentGroup({ deploymentSettings, functionName })
-    const deploymentGroup = this.getResourceLogicalName(deploymentGrTpl)
-    const aliasTpl = this.buildFunctionAlias({ deploymentSettings, functionName, deploymentGroup })
+    const aliasTpl = this.buildFunctionAlias({ deploymentSettings, functionName })
     const functionAlias = this.getResourceLogicalName(aliasTpl)
     const lambdaPermissions = this.buildPermissionsForAlias({ functionName, functionAlias })
     const eventsWithAlias = this.buildEventsForAlias({ functionName, functionAlias })
 
-    return [deploymentGrTpl, aliasTpl, ...lambdaPermissions, ...eventsWithAlias]
+    return [aliasTpl, ...lambdaPermissions, ...eventsWithAlias]
   }
 
-  buildCodeDeployApp () {
-    const logicalName = this.codeDeployAppName
-    const template = CfGenerators.codeDeploy.buildApplication()
-    return { [logicalName]: template }
-  }
-
-  buildCodeDeployRole (areTriggerConfigurationsSet) {
-    if (this.globalSettings.codeDeployRole) return {}
-    const logicalName = 'CodeDeployServiceRole'
-    const template = CfGenerators.iam.buildCodeDeployRole(this.globalSettings.codeDeployRolePermissionsBoundary, areTriggerConfigurationsSet)
-    return { [logicalName]: template }
-  }
-
-  buildFunctionDeploymentGroup ({ deploymentSettings, functionName }) {
-    const logicalName = this.getFunctionDeploymentGroupId(functionName)
-    const codeDeployGroupName = this.getDeploymentGroupName(logicalName)
-    const params = {
-      codeDeployAppName: this.codeDeployAppName,
-      codeDeployGroupName,
-      codeDeployRoleArn: deploymentSettings.codeDeployRole,
-      deploymentSettings
-    }
-    const template = CfGenerators.codeDeploy.buildFnDeploymentGroup(params)
-    return { [logicalName]: template }
-  }
-
-  buildFunctionAlias ({ deploymentSettings = {}, functionName, deploymentGroup }) {
+  buildFunctionAlias ({ deploymentSettings = {}, functionName }) {
     const { alias } = deploymentSettings
     const functionVersion = this.getVersionNameFor(functionName)
     const logicalName = `${functionName}Alias${alias}`
-    const beforeHook = this.getFunctionName(deploymentSettings.preTrafficHook)
-    const afterHook = this.getFunctionName(deploymentSettings.postTrafficHook)
-    const trafficShiftingSettings = {
-      codeDeployApp: this.codeDeployAppName,
-      deploymentGroup,
-      afterHook,
-      beforeHook
-    }
-    const template = CfGenerators.lambda.buildAlias({
-      alias,
-      functionName,
-      functionVersion,
-      trafficShiftingSettings
-    })
+    const template = CfGenerators.lambda.buildAlias({ alias, functionName, functionVersion })
     return { [logicalName]: template }
-  }
-
-  getFunctionDeploymentGroupId (functionLogicalId) {
-    return `${functionLogicalId}DeploymentGroup`
-  }
-
-  getDeploymentGroupName (deploymentGroupLogicalId) {
-    return `${this.naming.getStackName()}-${deploymentGroupLogicalId}`.slice(0, 100)
-  }
-
-  getFunctionName (slsFunctionName) {
-    return slsFunctionName ? this.naming.getLambdaLogicalId(slsFunctionName) : null
   }
 
   buildPermissionsForAlias ({ functionName, functionAlias }) {
@@ -222,11 +117,10 @@ class ServerlessLambdaDeployments {
     }
     const functionEvents = this.getEventsFor(functionName)
     const functionEventsEntries = _.entries(functionEvents)
-    const eventsWithAlias = functionEventsEntries.map(([logicalName, event]) => {
+    return functionEventsEntries.map(([logicalName, event]) => {
       const evt = replaceAliasStrategy[event.Type](event, functionAlias, functionName)
       return { [logicalName]: evt }
     })
-    return eventsWithAlias
   }
 
   getEventsFor (functionName) {
@@ -424,12 +318,10 @@ class ServerlessLambdaDeployments {
       [_.prop('Properties.FunctionName.Fn::GetAtt[0]'), _.matchesProperty('Properties.FunctionName.Fn::GetAtt[0]', functionName)],
       [_.prop('Properties.FunctionName.Ref'), _.matchesProperty('Properties.FunctionName.Ref', functionName)]
     ])
-
     const getPermissionForFunction = _.pipe(
       _.pickBy(isLambdaPermission),
       _.pickBy(isPermissionForFunction)
     )
-
     return getPermissionForFunction(this.compiledTpl.Resources)
   }
 

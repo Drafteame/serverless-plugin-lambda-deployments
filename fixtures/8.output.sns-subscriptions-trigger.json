@@ -32,23 +32,36 @@
             {
               "Effect": "Allow",
               "Principal": {
-                "Service": ["lambda.amazonaws.com"]
+                "Service": [
+                  "lambda.amazonaws.com"
+                ]
               },
-              "Action": ["sts:AssumeRole"]
+              "Action": [
+                "sts:AssumeRole"
+              ]
             }
           ]
         },
         "Policies": [
           {
             "PolicyName": {
-              "Fn::Join": ["-", ["dev", "canary-deployments-test", "lambda"]]
+              "Fn::Join": [
+                "-",
+                [
+                  "dev",
+                  "canary-deployments-test",
+                  "lambda"
+                ]
+              ]
             },
             "PolicyDocument": {
               "Version": "2012-10-17",
               "Statement": [
                 {
                   "Effect": "Allow",
-                  "Action": ["logs:CreateLogStream"],
+                  "Action": [
+                    "logs:CreateLogStream"
+                  ],
                   "Resource": [
                     {
                       "Fn::Sub": "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/canary-deployments-test-dev-hello:*"
@@ -63,7 +76,9 @@
                 },
                 {
                   "Effect": "Allow",
-                  "Action": ["logs:PutLogEvents"],
+                  "Action": [
+                    "logs:PutLogEvents"
+                  ],
                   "Resource": [
                     {
                       "Fn::Sub": "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/canary-deployments-test-dev-hello:*:*"
@@ -78,18 +93,11 @@
                 },
                 {
                   "Effect": "Allow",
-                  "Action": ["codedeploy:*"],
-                  "Resource": ["*"]
-                },
-                {
                   "Action": [
-                    "codedeploy:PutLifecycleEventHookExecutionStatus"
+                    "codedeploy:*"
                   ],
-                  "Effect": "Allow",
                   "Resource": [
-                    {
-                      "Fn::Sub": "arn:${AWS::Partition}:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentgroup:${CanarydeploymentstestdevDeploymentApplication}/canary-deployments-test-dev-BelloLambdaFunctionDeploymentGroup"
-                    }
+                    "*"
                   ]
                 }
               ]
@@ -100,7 +108,12 @@
         "RoleName": {
           "Fn::Join": [
             "-",
-            ["canary-deployments-test", "dev", "us-east-1", "lambdaRole"]
+            [
+              "canary-deployments-test",
+              "dev",
+              "us-east-1",
+              "lambdaRole"
+            ]
           ]
         }
       }
@@ -118,12 +131,18 @@
         "Handler": "handler.hello",
         "MemorySize": 1024,
         "Role": {
-          "Fn::GetAtt": ["IamRoleLambdaExecution", "Arn"]
+          "Fn::GetAtt": [
+            "IamRoleLambdaExecution",
+            "Arn"
+          ]
         },
         "Runtime": "nodejs6.10",
         "Timeout": 6
       },
-      "DependsOn": ["HelloLogGroup", "IamRoleLambdaExecution"]
+      "DependsOn": [
+        "HelloLogGroup",
+        "IamRoleLambdaExecution"
+      ]
     },
     "BelloLambdaVersionFYAirphUvjV7H12yGxU1eQrqAiSBMjAi9hdLPgV62L8": {
       "Type": "AWS::Lambda::Version",
@@ -148,12 +167,18 @@
         "Handler": "hooks.pre",
         "MemorySize": 1024,
         "Role": {
-          "Fn::GetAtt": ["IamRoleLambdaExecution", "Arn"]
+          "Fn::GetAtt": [
+            "IamRoleLambdaExecution",
+            "Arn"
+          ]
         },
         "Runtime": "nodejs6.10",
         "Timeout": 6
       },
-      "DependsOn": ["PreHookLogGroup", "IamRoleLambdaExecution"]
+      "DependsOn": [
+        "PreHookLogGroup",
+        "IamRoleLambdaExecution"
+      ]
     },
     "PreHookLambdaVersionIYyrXlfQM5jjU68REvnAzRxhgq9eoLqSsDjy0": {
       "Type": "AWS::Lambda::Version",
@@ -178,12 +203,18 @@
         "Handler": "hooks.post",
         "MemorySize": 1024,
         "Role": {
-          "Fn::GetAtt": ["IamRoleLambdaExecution", "Arn"]
+          "Fn::GetAtt": [
+            "IamRoleLambdaExecution",
+            "Arn"
+          ]
         },
         "Runtime": "nodejs6.10",
         "Timeout": 6
       },
-      "DependsOn": ["PostHookLogGroup", "IamRoleLambdaExecution"]
+      "DependsOn": [
+        "PostHookLogGroup",
+        "IamRoleLambdaExecution"
+      ]
     },
     "PostHookLambdaVersiondh0VUUAh9BrmvORqx3vDEIcHxolKWKCO1YL45mVTbg": {
       "Type": "AWS::Lambda::Version",
@@ -206,7 +237,9 @@
           "Ref": "BelloLambdaFunctionAliasLive"
         },
         "FilterPolicy": {
-          "eventType": ["HelloEvent"]
+          "eventType": [
+            "HelloEvent"
+          ]
         }
       }
     },
@@ -233,75 +266,6 @@
         }
       }
     },
-    "CanarydeploymentstestdevDeploymentApplication": {
-      "Type": "AWS::CodeDeploy::Application",
-      "Properties": {
-        "ComputePlatform": "Lambda"
-      }
-    },
-    "CodeDeployServiceRole": {
-      "Type": "AWS::IAM::Role",
-      "Properties": {
-        "ManagedPolicyArns": [
-          "arn:aws:iam::aws:policy/service-role/AWSCodeDeployRoleForLambdaLimited",
-          "arn:aws:iam::aws:policy/AWSLambda_FullAccess"
-        ],
-        "AssumeRolePolicyDocument": {
-          "Version": "2012-10-17",
-          "Statement": [
-            {
-              "Action": ["sts:AssumeRole"],
-              "Effect": "Allow",
-              "Principal": {
-                "Service": ["codedeploy.amazonaws.com"]
-              }
-            }
-          ]
-        }
-      }
-    },
-    "BelloLambdaFunctionDeploymentGroup": {
-      "Type": "AWS::CodeDeploy::DeploymentGroup",
-      "Properties": {
-        "ApplicationName": {
-          "Ref": "CanarydeploymentstestdevDeploymentApplication"
-        },
-        "AutoRollbackConfiguration": {
-          "Enabled": true,
-          "Events": [
-            "DEPLOYMENT_FAILURE",
-            "DEPLOYMENT_STOP_ON_ALARM",
-            "DEPLOYMENT_STOP_ON_REQUEST"
-          ]
-        },
-        "ServiceRoleArn": {
-          "Fn::GetAtt": ["CodeDeployServiceRole", "Arn"]
-        },
-        "DeploymentConfigName": {
-          "Fn::Sub": [
-            "CodeDeployDefault.Lambda${ConfigName}",
-            {
-              "ConfigName": "Linear10PercentEvery1Minute"
-            }
-          ]
-        },
-        "DeploymentGroupName": "canary-deployments-test-dev-BelloLambdaFunctionDeploymentGroup",
-        "DeploymentStyle": {
-          "DeploymentType": "BLUE_GREEN",
-          "DeploymentOption": "WITH_TRAFFIC_CONTROL"
-        },
-        "AlarmConfiguration": {
-          "Alarms": [
-            {
-              "Name": {
-                "Ref": "BelloFooAlarm"
-              }
-            }
-          ],
-          "Enabled": true
-        }
-      }
-    },
     "BelloLambdaFunctionAliasLive": {
       "Type": "AWS::Lambda::Alias",
       "Properties": {
@@ -315,22 +279,6 @@
           "Ref": "BelloLambdaFunction"
         },
         "Name": "Live"
-      },
-      "UpdatePolicy": {
-        "CodeDeployLambdaAliasUpdate": {
-          "ApplicationName": {
-            "Ref": "CanarydeploymentstestdevDeploymentApplication"
-          },
-          "AfterAllowTrafficHook": {
-            "Ref": "PostHookLambdaFunction"
-          },
-          "BeforeAllowTrafficHook": {
-            "Ref": "PreHookLambdaFunction"
-          },
-          "DeploymentGroupName": {
-            "Ref": "BelloLambdaFunctionDeploymentGroup"
-          }
-        }
       }
     }
   },

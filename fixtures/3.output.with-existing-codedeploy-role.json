@@ -116,17 +116,6 @@
                       ]
                     }
                   ]
-                },
-                {
-                  "Action": [
-                    "codedeploy:PutLifecycleEventHookExecutionStatus"
-                  ],
-                  "Effect": "Allow",
-                  "Resource": [
-                    {
-                      "Fn::Sub": "arn:${AWS::Partition}:codedeploy:${AWS::Region}:${AWS::AccountId}:deploymentgroup:${CanarydeploymentstestdevDeploymentApplication}/canary-deployments-test-dev-HelloLambdaFunctionDeploymentGroup"
-                    }
-                  ]
                 }
               ]
             }
@@ -467,52 +456,6 @@
         }
       }
     },
-    "CanarydeploymentstestdevDeploymentApplication": {
-      "Type": "AWS::CodeDeploy::Application",
-      "Properties": {
-        "ComputePlatform": "Lambda"
-      }
-    },
-    "HelloLambdaFunctionDeploymentGroup": {
-      "Type": "AWS::CodeDeploy::DeploymentGroup",
-      "Properties": {
-        "ApplicationName": {
-          "Ref": "CanarydeploymentstestdevDeploymentApplication"
-        },
-        "AutoRollbackConfiguration": {
-          "Enabled": true,
-          "Events": [
-            "DEPLOYMENT_FAILURE",
-            "DEPLOYMENT_STOP_ON_ALARM",
-            "DEPLOYMENT_STOP_ON_REQUEST"
-          ]
-        },
-        "ServiceRoleArn": "someExistingCodeDeployRole",
-        "DeploymentConfigName": {
-          "Fn::Sub": [
-            "CodeDeployDefault.Lambda${ConfigName}",
-            {
-              "ConfigName": "Linear10PercentEvery1Minute"
-            }
-          ]
-        },
-        "DeploymentGroupName": "canary-deployments-test-dev-HelloLambdaFunctionDeploymentGroup",
-        "DeploymentStyle": {
-          "DeploymentType": "BLUE_GREEN",
-          "DeploymentOption": "WITH_TRAFFIC_CONTROL"
-        },
-        "AlarmConfiguration": {
-          "Alarms": [
-            {
-              "Name": {
-                "Ref": "HelloFooAlarm"
-              }
-            }
-          ],
-          "Enabled": true
-        }
-      }
-    },
     "HelloLambdaFunctionAliasLive": {
       "Type": "AWS::Lambda::Alias",
       "Properties": {
@@ -526,22 +469,6 @@
           "Ref": "HelloLambdaFunction"
         },
         "Name": "Live"
-      },
-      "UpdatePolicy": {
-        "CodeDeployLambdaAliasUpdate": {
-          "ApplicationName": {
-            "Ref": "CanarydeploymentstestdevDeploymentApplication"
-          },
-          "AfterAllowTrafficHook": {
-            "Ref": "PostHookLambdaFunction"
-          },
-          "BeforeAllowTrafficHook": {
-            "Ref": "PreHookLambdaFunction"
-          },
-          "DeploymentGroupName": {
-            "Ref": "HelloLambdaFunctionDeploymentGroup"
-          }
-        }
       }
     }
   },
