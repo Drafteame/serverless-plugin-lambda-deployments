@@ -1,4 +1,4 @@
-[![npm version](https://badge.fury.io/js/serverless-plugin-canary-deployments.svg)](https://badge.fury.io/js/serverless-plugin-canary-deployments)
+[![npm version](https://badge.fury.io/js/serverless-plugin-lambda-deployments.svg)](https://badge.fury.io/js/serverless-plugin-lambda-deployments)
 
 # Serverless Plugin Canary Deployments
 
@@ -15,7 +15,7 @@ A Serverless plugin to implement canary deployments of Lambda functions, making 
 
 ## <a name="installation"></a>Installation
 
-`npm i --save-dev serverless-plugin-canary-deployments`
+`npm i --save-dev serverless-plugin-lambda-deployments`
 
 ## <a name="usage"></a>Usage
 
@@ -34,7 +34,7 @@ provider:
         - "*"
 
 plugins:
-  - serverless-plugin-canary-deployments
+  - serverless-plugin-lambda-deployments
 
 functions:
   hello:

@@ -1,5 +1,5 @@
 const _ = require('lodash/fp')
-const flattenObject = require('flat')
+const { flatten: flattenObject } = require('flat')
 const CfGenerators = require('./lib/CfTemplateGenerators')
 const {
   customPropertiesSchema,
@@ -10,7 +10,7 @@ const slsHasConfigSchema = sls =>
   sls.configSchemaHandler &&
   sls.configSchemaHandler.defineCustomProperties &&
   sls.configSchemaHandler.defineFunctionProperties
-class ServerlessCanaryDeployments {
+class ServerlessLambdaDeployments {
   constructor (serverless, options) {
     this.serverless = serverless
     this.options = options
@@ -443,4 +443,4 @@ class ServerlessCanaryDeployments {
   }
 }
 
-module.exports = ServerlessCanaryDeployments
+module.exports = ServerlessLambdaDeployments

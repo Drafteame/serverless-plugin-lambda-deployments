@@ -3,18 +3,18 @@ const path = require('path')
 const chai = require('chai')
 const _ = require('lodash/fp')
 const { getInstalledPathSync } = require('get-installed-path')
-const ServerlessCanaryDeployments = require('./serverless-plugin-canary-deployments')
+const ServerlessLambdaDeployments = require('./serverless-plugin-lambda-deployments')
 
 const serverlessPath = getInstalledPathSync('serverless', { local: true })
 const Serverless = require(`${serverlessPath}/lib/Serverless`)
-const serverlessVersion = parseInt((new Serverless()).version)
+const serverlessVersion = parseInt(require(`${serverlessPath}/package.json`).version)
 const AwsProvider = serverlessVersion > 1
   ? require(`${serverlessPath}/lib/plugins/aws/provider`)
   : require(`${serverlessPath}/lib/plugins/aws/provider/awsProvider`)
 const { expect } = chai
 const fixturesPath = path.resolve(__dirname, 'fixtures')
 
-describe('ServerlessCanaryDeployments', () => {
+describe('ServerlessLambdaDeployments', () => {
   const stage = 'dev'
   const options = { stage }
 
@@ -37,11 +37,11 @@ describe('ServerlessCanaryDeployments', () => {
 
     this.testCases.forEach(({ caseName, input, output, service }) => {
       it(`generates the correct CloudFormation templates: test case ${caseName}`, () => {
-        const serverless = new Serverless(options)
+        const serverless = new Serverless({ commands: [], options })
         Object.assign(serverless.service, service)
         serverless.service.provider.compiledCloudFormationTemplate = input
         serverless.setProvider('aws', new AwsProvider(serverless, options))
-        const plugin = new ServerlessCanaryDeployments(serverless, options)
+        const plugin = new ServerlessLambdaDeployments(serverless, options)
         plugin.addCanaryDeploymentResources()
         expect(serverless.service.provider.compiledCloudFormationTemplate).to.deep.equal(output)
       })
