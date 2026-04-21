@@ -79,7 +79,7 @@ class ServerlessLambdaDeployments {
     const aliasTpl = this.buildFunctionAlias({ deploymentSettings, functionName })
     const functionAlias = this.getResourceLogicalName(aliasTpl)
     const lambdaPermissions = this.buildPermissionsForAlias({ functionName, functionAlias })
-    const eventsWithAlias = this.buildEventsForAlias({ functionName, functionAlias })
+    const eventsWithAlias = this.buildEventsForAlias({ functionName, functionAlias, alias: deploymentSettings.alias })
 
     return [aliasTpl, ...lambdaPermissions, ...eventsWithAlias]
   }
@@ -101,9 +101,10 @@ class ServerlessLambdaDeployments {
     })
   }
 
-  buildEventsForAlias ({ functionName, functionAlias }) {
+  buildEventsForAlias ({ functionName, functionAlias, alias }) {
     const replaceAliasStrategy = {
       'AWS::Lambda::EventSourceMapping': CfGenerators.lambda.replaceEventMappingFunctionWithAlias,
+      'AWS::Lambda::EventInvokeConfig': (resource, fnAlias) => CfGenerators.lambda.replaceEventInvokeConfigWithAlias(resource, fnAlias, alias),
       'AWS::ApiGateway::Method': CfGenerators.apiGateway.replaceMethodUriWithAlias,
       'AWS::ApiGatewayV2::Integration': CfGenerators.apiGateway.replaceV2IntegrationUriWithAlias,
       'AWS::ApiGatewayV2::Authorizer': CfGenerators.apiGateway.replaceV2AuthorizerUriWithAlias,
@@ -128,6 +129,7 @@ class ServerlessLambdaDeployments {
     const apiGatewayV2Methods = this.getApiGatewayV2MethodsFor(functionName)
     const apiGatewayV2Authorizers = this.getApiGatewayV2AuthorizersFor(functionName)
     const eventSourceMappings = this.getEventSourceMappingsFor(functionName)
+    const eventInvokeConfigs = this.getEventInvokeConfigsFor(functionName)
     const snsTopics = this.getSnsTopicsFor(functionName)
     const snsSubscriptions = this.getSnsSubscriptionsFor(functionName)
     const s3Events = this.getS3EventsFor(functionName)
@@ -141,6 +143,7 @@ class ServerlessLambdaDeployments {
       apiGatewayV2Methods,
       apiGatewayV2Authorizers,
       eventSourceMappings,
+      eventInvokeConfigs,
       snsTopics,
       s3Events,
       cloudWatchEvents,
@@ -230,6 +233,16 @@ class ServerlessLambdaDeployments {
       _.pickBy(isSubscriptionForFunction)
     )
     return getMappingsForFunction(this.compiledTpl.Resources)
+  }
+
+  getEventInvokeConfigsFor (functionName) {
+    const isEventInvokeConfig = _.matchesProperty('Type', 'AWS::Lambda::EventInvokeConfig')
+    const isConfigForFunction = _.matchesProperty('Properties.FunctionName.Ref', functionName)
+    const getConfigsForFunction = _.pipe(
+      _.pickBy(isEventInvokeConfig),
+      _.pickBy(isConfigForFunction)
+    )
+    return getConfigsForFunction(this.compiledTpl.Resources)
   }
 
   getCloudWatchEventsFor (functionName) {
