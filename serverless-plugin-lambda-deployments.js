@@ -85,10 +85,10 @@ class ServerlessLambdaDeployments {
   }
 
   buildFunctionAlias ({ deploymentSettings = {}, functionName }) {
-    const { alias } = deploymentSettings
+    const { alias, provisionedConcurrency } = deploymentSettings
     const functionVersion = this.getVersionNameFor(functionName)
     const logicalName = `${functionName}Alias${alias}`
-    const template = CfGenerators.lambda.buildAlias({ alias, functionName, functionVersion })
+    const template = CfGenerators.lambda.buildAlias({ alias, functionName, functionVersion, provisionedConcurrency })
     return { [logicalName]: template }
   }
 
