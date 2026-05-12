@@ -2,13 +2,12 @@
 
 # serverless-plugin-lambda-deployments
 
-A Serverless Framework v3 plugin to manage deployment strategies for AWS Lambda functions. Supports Blue/Green deployments without CodeDeploy, as well as Canary and Linear traffic shifting with CodeDeploy.
+A Serverless Framework v3 plugin to manage Blue/Green deployments for AWS Lambda functions. No CodeDeploy required.
 
 ## Contents
 
 - [Installation](#installation)
 - [Usage](#usage)
-- [Deployment strategies](#deployment-strategies)
 - [Configuration reference](#configuration-reference)
 - [SQS support](#sqs-support)
 - [Provisioned Concurrency + Auto Scaling](#provisioned-concurrency--auto-scaling)
@@ -43,65 +42,21 @@ functions:
       alias: live
 ```
 
-## Deployment strategies
+On each deploy, the plugin publishes a new Lambda version and switches the alias to point to it instantly. Rollback is a manual alias update:
 
-### BlueGreen
-
-Instant 100% traffic switch. No CodeDeploy required. CloudFormation updates the alias directly on each deploy. Rollback is a manual alias update.
-
-```yaml
-deploymentSettings:
-  type: BlueGreen
-  alias: live
-```
-
-### Canary
-
-Gradual traffic shifting with CodeDeploy. Shifts 10% of traffic first, then the remaining 90% after a configurable delay.
-
-```yaml
-deploymentSettings:
-  type: Canary10Percent5Minutes   # or 10Minutes, 15Minutes, 30Minutes
-  alias: live
-  alarms:
-    - MyFunctionErrors
-  preTrafficHook: preHookFunction
-  postTrafficHook: postHookFunction
-```
-
-### Linear
-
-Incremental traffic shifting with CodeDeploy. Shifts traffic in equal increments over time.
-
-```yaml
-deploymentSettings:
-  type: Linear10PercentEvery1Minute   # or Every2Minutes, Every3Minutes, Every10Minutes
-  alias: live
-  alarms:
-    - MyFunctionErrors
-```
-
-### AllAtOnce
-
-Instant switch via CodeDeploy. Useful when you want validation hooks without gradual shifting.
-
-```yaml
-deploymentSettings:
-  type: AllAtOnce
-  alias: live
-  preTrafficHook: preHookFunction
-  postTrafficHook: postHookFunction
+```bash
+aws lambda update-alias \
+  --function-name my-function \
+  --name live \
+  --function-version <previous-version>
 ```
 
 ## Configuration reference
 
 | Field | Required | Description |
 |---|---|---|
-| `type` | yes | Deployment strategy: `BlueGreen`, `Canary*`, `Linear*`, `AllAtOnce` |
+| `type` | yes | Must be `BlueGreen` |
 | `alias` | yes | Name of the Lambda alias to create (e.g. `live`) |
-| `alarms` | no | List of CloudWatch alarm logical IDs. Triggers auto-rollback on Canary/Linear deployments |
-| `preTrafficHook` | no | Function name to run before traffic shifting (Canary/Linear/AllAtOnce only) |
-| `postTrafficHook` | no | Function name to run after traffic shifting (Canary/Linear/AllAtOnce only) |
 | `stages` | no | List of stages where the plugin is active. If omitted, applies to all stages |
 | `provisionedConcurrency` | no | Number of provisioned concurrency instances (minimum when combined with `autoScaling`) |
 | `autoScaling` | no | Auto scaling config for provisioned concurrency. See below |
@@ -126,9 +81,7 @@ functions:
 
   functionB:
     handler: src/functionB.main
-    deploymentSettings:
-      <<: *deploymentDefaults
-      type: Canary10Percent5Minutes
+    deploymentSettings: *deploymentDefaults
 ```
 
 ## SQS support
