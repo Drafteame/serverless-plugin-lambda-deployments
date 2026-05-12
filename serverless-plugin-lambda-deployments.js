@@ -80,8 +80,35 @@ class ServerlessLambdaDeployments {
     const functionAlias = this.getResourceLogicalName(aliasTpl)
     const lambdaPermissions = this.buildPermissionsForAlias({ functionName, functionAlias })
     const eventsWithAlias = this.buildEventsForAlias({ functionName, functionAlias, alias: deploymentSettings.alias })
+    const autoScalingResources = this.buildAutoScalingResources({ deploymentSettings, functionName, functionAlias })
 
-    return [aliasTpl, ...lambdaPermissions, ...eventsWithAlias]
+    return [aliasTpl, ...lambdaPermissions, ...eventsWithAlias, ...autoScalingResources]
+  }
+
+  buildAutoScalingResources ({ deploymentSettings, functionName, functionAlias }) {
+    const { alias, provisionedConcurrency, autoScaling } = deploymentSettings
+    if (!autoScaling || !provisionedConcurrency) return []
+
+    const scalableTargetLogicalName = `${functionName}AutoScalingTarget`
+    const scalableTarget = CfGenerators.autoScaling.buildScalableTarget({
+      functionName,
+      alias,
+      functionAlias,
+      minCapacity: provisionedConcurrency,
+      maxCapacity: autoScaling.maxCapacity
+    })
+    const scalingPolicy = CfGenerators.autoScaling.buildScalingPolicy({
+      functionName,
+      scalableTargetLogicalName,
+      targetUtilization: autoScaling.targetUtilization || 0.7,
+      scaleInCooldown: autoScaling.scaleInCooldown,
+      scaleOutCooldown: autoScaling.scaleOutCooldown
+    })
+
+    return [
+      { [scalableTargetLogicalName]: scalableTarget },
+      { [`${functionName}AutoScalingPolicy`]: scalingPolicy }
+    ]
   }
 
   buildFunctionAlias ({ deploymentSettings = {}, functionName }) {
