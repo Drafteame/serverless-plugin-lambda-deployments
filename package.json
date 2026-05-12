@@ -1,24 +1,20 @@
 {
-  "name": "serverless-plugin-lambda-deployments",
+  "name": "@drafteame/serverless-plugin-lambda-deployments",
   "engines": {
-    "node": ">=4.0"
+    "node": ">=18.0.0"
   },
-  "version": "0.8.0",
-  "description": "A Serverless plugin to implement canary deployment of Lambda functions",
+  "version": "1.0.0",
+  "description": "Blue/Green and Canary deployments for AWS Lambda with Serverless Framework v3",
   "main": "serverless-plugin-lambda-deployments.js",
   "scripts": {
     "test": "npm run lint && NODE_ENV=test ./node_modules/mocha/bin/mocha.js $(find ./ -name '*.test.js' -not -path '.*/node_modules/*')",
     "watch": "NODE_ENV=test ./node_modules/mocha/bin/mocha.js -w $(find ./ -name '*.test.js' -not -path '*/node_modules/*')",
     "lint": "standard"
   },
-  "author": "David García <davidgf1987@gmail.com>",
-  "contributors": [
-    "Carlos Castellanos <me@carloscastellanosvera.com> (https://github.com/ccverak/)",
-    "Kartikeya Verma <kverma23@outlook.com> (https://github.com/kverma23/)"
-  ],
+  "author": "Drafteame Platform Team",
   "license": "ISC",
   "repository": {
-    "url": "https://github.com/davidgf/serverless-plugin-lambda-deployments.git",
+    "url": "https://github.com/Drafteame/serverless-plugin-lambda-deployments.git",
     "type": "git"
   },
   "dependencies": {
