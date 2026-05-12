@@ -38,7 +38,6 @@ functions:
     events:
       - http: GET /my-endpoint
     deploymentSettings:
-      type: BlueGreen
       alias: live
 ```
 
@@ -55,7 +54,6 @@ aws lambda update-alias \
 
 | Field | Required | Description |
 |---|---|---|
-| `type` | yes | Must be `BlueGreen` |
 | `alias` | yes | Name of the Lambda alias to create (e.g. `live`) |
 | `stages` | no | List of stages where the plugin is active. If omitted, applies to all stages |
 | `provisionedConcurrency` | no | Number of provisioned concurrency instances (minimum when combined with `autoScaling`) |
@@ -68,7 +66,6 @@ You can define shared settings under `custom.deploymentSettings` and reference t
 ```yaml
 custom:
   deploymentSettings: &deploymentDefaults
-    type: BlueGreen
     alias: live
     stages:
       - prod
@@ -84,6 +81,8 @@ functions:
     deploymentSettings: *deploymentDefaults
 ```
 
+Note: `stages` can be omitted from the anchor and set per-environment via `--stage` flag.
+
 ## SQS support
 
 When using SQS with an alias, define the Event Source Mapping manually in `resources` instead of using `events.sqs`. This ensures the ESM points to the alias rather than `$LATEST`.
@@ -93,7 +92,6 @@ functions:
   sqsProcessor:
     handler: src/sqs.main
     deploymentSettings:
-      type: BlueGreen
       alias: live
 
 resources:
@@ -131,7 +129,6 @@ When both `provisionedConcurrency` and `autoScaling` are set, the plugin creates
 
 ```yaml
 deploymentSettings:
-  type: BlueGreen
   alias: live
   provisionedConcurrency: 5      # minimum instances
   autoScaling:
