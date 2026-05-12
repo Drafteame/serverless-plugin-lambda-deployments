@@ -11,7 +11,7 @@
     "watch": "NODE_ENV=test ./node_modules/mocha/bin/mocha.js -w $(find ./ -name '*.test.js' -not -path '*/node_modules/*')",
     "lint": "standard"
   },
-  "author": "Drafteame Platform Team",
+  "author": "Ariel Santos <ariel.santos@draftea.com>",
   "license": "ISC",
   "repository": {
     "url": "https://github.com/Drafteame/serverless-plugin-lambda-deployments.git",

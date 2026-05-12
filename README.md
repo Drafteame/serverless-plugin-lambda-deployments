@@ -1,127 +1,197 @@
-[![npm version](https://badge.fury.io/js/serverless-plugin-lambda-deployments.svg)](https://badge.fury.io/js/serverless-plugin-lambda-deployments)
+[![npm version](https://badge.fury.io/js/%40drafteame%2Fserverless-plugin-lambda-deployments.svg)](https://badge.fury.io/js/%40drafteame%2Fserverless-plugin-lambda-deployments)
 
-# Serverless Plugin Canary Deployments
+# serverless-plugin-lambda-deployments
 
-A Serverless plugin to implement canary deployments of Lambda functions, making use of the [traffic shifting feature](https://docs.aws.amazon.com/lambda/latest/dg/lambda-traffic-shifting-using-aliases.html) in combination with [AWS CodeDeploy](https://docs.aws.amazon.com/lambda/latest/dg/automating-updates-to-serverless-apps.html)
+A Serverless Framework v3 plugin to manage deployment strategies for AWS Lambda functions. Supports Blue/Green deployments without CodeDeploy, as well as Canary and Linear traffic shifting with CodeDeploy.
 
 ## Contents
 
 - [Installation](#installation)
 - [Usage](#usage)
-- [Configuration](#configuration)
-- [How it works](#how)
-- [Limitations](#limitations)
+- [Deployment strategies](#deployment-strategies)
+- [Configuration reference](#configuration-reference)
+- [SQS support](#sqs-support)
+- [Provisioned Concurrency + Auto Scaling](#provisioned-concurrency--auto-scaling)
 - [License](#license)
+- [Credits](#credits)
 
-## <a name="installation"></a>Installation
+## Installation
 
-`npm i --save-dev serverless-plugin-lambda-deployments`
-
-## <a name="usage"></a>Usage
-
-To enable gradual deployments for Lambda functions, your `serverless.yml` should look like this:
-
-```yaml
-service: canary-deployments
-provider:
-  name: aws
-  runtime: nodejs6.10
-  iamRoleStatements:
-    - Effect: Allow
-      Action:
-        - codedeploy:*
-      Resource:
-        - "*"
-
-plugins:
-  - serverless-plugin-lambda-deployments
-
-functions:
-  hello:
-    handler: handler.hello
-    events:
-      - http: GET hello
-    deploymentSettings:
-      type: Linear10PercentEvery1Minute
-      alias: Live
-      preTrafficHook: preHook
-      postTrafficHook: postHook
-      alarms:
-        - FooAlarm          # When a string is provided, it expects the alarm Logical ID
-        - name: BarAlarm    # When an object is provided, it expects the alarm name in the name property
-
-  preHook:
-    handler: hooks.pre
-  postHook:
-    handler: hooks.post
+```bash
+npm install --save-dev @drafteame/serverless-plugin-lambda-deployments
 ```
 
-You can see a working example in the [example folder](./example/).
+## Usage
 
-## <a name="configuration"></a>Configuration
+Add the plugin to your `serverless.yml`:
 
-* `type`: (required) defines how the traffic will be shifted between Lambda function versions. It must be one of the following:
-  - `Canary10Percent5Minutes`: shifts 10 percent of traffic in the first increment. The remaining 90 percent is deployed five minutes later.
-  - `Canary10Percent10Minutes`: shifts 10 percent of traffic in the first increment. The remaining 90 percent is deployed 10 minutes later.
-  - `Canary10Percent15Minutes`: shifts 10 percent of traffic in the first increment. The remaining 90 percent is deployed 15 minutes later.
-  - `Canary10Percent30Minutes`: shifts 10 percent of traffic in the first increment. The remaining 90 percent is deployed 30 minutes later.
-  - `Linear10PercentEvery1Minute`: shifts 10 percent of traffic every minute until all traffic is shifted.
-  - `Linear10PercentEvery2Minutes`: shifts 10 percent of traffic every two minutes until all traffic is shifted.
-  - `Linear10PercentEvery3Minutes`: shifts 10 percent of traffic every three minutes until all traffic is shifted.
-  - `Linear10PercentEvery10Minutes`: shifts 10 percent of traffic every 10 minutes until all traffic is shifted.
-  - `AllAtOnce`: shifts all the traffic to the new version, useful when you only need to execute the validation hooks.
-* `alias`: (required) name that will be used to create the Lambda function alias.
-* `preTrafficHook`: (optional) validation Lambda function that runs before traffic shifting. It must use the CodeDeploy SDK to notify about this step's success or failure (more info [here](https://docs.aws.amazon.com/codedeploy/latest/userguide/reference-appspec-file-structure-hooks.html)).
-* `postTrafficHook`: (optional) validation Lambda function that runs after traffic shifting. It must use the CodeDeploy SDK to notify about this step's success or failure (more info [here](https://docs.aws.amazon.com/codedeploy/latest/userguide/reference-appspec-file-structure-hooks.html))
-* `alarms`: (optional) list of CloudWatch alarms. If any of them is triggered during the deployment, the associated Lambda function will automatically roll back to the previous version.
-* `triggerConfigurations`: (optional) list of CodeDeploy Triggers. See more details in the [CodeDeploy TriggerConfiguration Documentation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-codedeploy-deploymentgroup-triggerconfig.html), or [this CodeDeploy notifications guide](https://docs.aws.amazon.com/codedeploy/latest/userguide/monitoring-sns-event-notifications-create-trigger.html) for example uses
+```yaml
+plugins:
+  - '@drafteame/serverless-plugin-lambda-deployments'
+```
 
-### Default configurations
+Then add `deploymentSettings` to any function you want to manage:
 
-You can set default values for all functions in a top-level custom deploymentSettings section.  E.g.:
+```yaml
+functions:
+  myFunction:
+    handler: src/handler.main
+    events:
+      - http: GET /my-endpoint
+    deploymentSettings:
+      type: BlueGreen
+      alias: live
+```
+
+## Deployment strategies
+
+### BlueGreen
+
+Instant 100% traffic switch. No CodeDeploy required. CloudFormation updates the alias directly on each deploy. Rollback is a manual alias update.
+
+```yaml
+deploymentSettings:
+  type: BlueGreen
+  alias: live
+```
+
+### Canary
+
+Gradual traffic shifting with CodeDeploy. Shifts 10% of traffic first, then the remaining 90% after a configurable delay.
+
+```yaml
+deploymentSettings:
+  type: Canary10Percent5Minutes   # or 10Minutes, 15Minutes, 30Minutes
+  alias: live
+  alarms:
+    - MyFunctionErrors
+  preTrafficHook: preHookFunction
+  postTrafficHook: postHookFunction
+```
+
+### Linear
+
+Incremental traffic shifting with CodeDeploy. Shifts traffic in equal increments over time.
+
+```yaml
+deploymentSettings:
+  type: Linear10PercentEvery1Minute   # or Every2Minutes, Every3Minutes, Every10Minutes
+  alias: live
+  alarms:
+    - MyFunctionErrors
+```
+
+### AllAtOnce
+
+Instant switch via CodeDeploy. Useful when you want validation hooks without gradual shifting.
+
+```yaml
+deploymentSettings:
+  type: AllAtOnce
+  alias: live
+  preTrafficHook: preHookFunction
+  postTrafficHook: postHookFunction
+```
+
+## Configuration reference
+
+| Field | Required | Description |
+|---|---|---|
+| `type` | yes | Deployment strategy: `BlueGreen`, `Canary*`, `Linear*`, `AllAtOnce` |
+| `alias` | yes | Name of the Lambda alias to create (e.g. `live`) |
+| `alarms` | no | List of CloudWatch alarm logical IDs. Triggers auto-rollback on Canary/Linear deployments |
+| `preTrafficHook` | no | Function name to run before traffic shifting (Canary/Linear/AllAtOnce only) |
+| `postTrafficHook` | no | Function name to run after traffic shifting (Canary/Linear/AllAtOnce only) |
+| `stages` | no | List of stages where the plugin is active. If omitted, applies to all stages |
+| `provisionedConcurrency` | no | Number of provisioned concurrency instances (minimum when combined with `autoScaling`) |
+| `autoScaling` | no | Auto scaling config for provisioned concurrency. See below |
+
+### Global defaults
+
+You can define shared settings under `custom.deploymentSettings` and reference them per function using YAML anchors:
 
 ```yaml
 custom:
-  deploymentSettings:
-    codeDeployRole: some_arn_value
-    codeDeployRolePermissionsBoundary: some_arn_value
+  deploymentSettings: &deploymentDefaults
+    type: BlueGreen
+    alias: live
     stages:
-      - dev
       - prod
+      - staging
 
 functions:
-  ...
+  functionA:
+    handler: src/functionA.main
+    deploymentSettings: *deploymentDefaults
+
+  functionB:
+    handler: src/functionB.main
+    deploymentSettings:
+      <<: *deploymentDefaults
+      type: Canary10Percent5Minutes
 ```
 
-Some values are only available as top-level configurations.  They are:
+## SQS support
 
-* `codeDeployRole`: (optional) an ARN specifying an existing IAM role for CodeDeploy.  If absent, one will be created for you.  See the [codeDeploy policy](./example-code-deploy-policy.json) for an example of what is needed.
-* `codeDeployRolePermissionsBoundary`: (optional) an ARN specifying an existing IAM permissions boundary, this permission boundary is set on the code deploy that is being created when codeDeployRole is not defined.
-* `stages`: (optional) list of stages where you want to deploy your functions gradually. If not present, it assumes that are all of them.
+When using SQS with an alias, define the Event Source Mapping manually in `resources` instead of using `events.sqs`. This ensures the ESM points to the alias rather than `$LATEST`.
 
-## <a name="how"></a>How it works
+```yaml
+functions:
+  sqsProcessor:
+    handler: src/sqs.main
+    deploymentSettings:
+      type: BlueGreen
+      alias: live
 
-The plugin relies on the [AWS Lambda traffic shifting feature](https://docs.aws.amazon.com/lambda/latest/dg/lambda-traffic-shifting-using-aliases.html) to balance traffic between versions and [AWS CodeDeploy](https://docs.aws.amazon.com/lambda/latest/dg/automating-updates-to-serverless-apps.html) to automatically update its weight. It modifies the `CloudFormation` template generated by [Serverless](https://github.com/serverless/serverless), so that:
+resources:
+  Resources:
+    MyQueue:
+      Type: AWS::SQS::Queue
 
-1. It creates a Lambda function Alias for each function with deployment settings.
-2. It creates a CodeDeploy Application and adds a [CodeDeploy DeploymentGroup](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-codedeploy-deploymentgroup.html) per Lambda function, according to the specified settings.
-3. It modifies events that trigger Lambda functions, so that they invoke the newly created alias.
+    SqsProcessorESM:
+      Type: AWS::Lambda::EventSourceMapping
+      Properties:
+        EventSourceArn: !GetAtt MyQueue.Arn
+        FunctionName: !Sub "${AWS::StackName}-sqsProcessor:live"
+        BatchSize: 10
+        Enabled: true
+```
 
-## <a name="limitations"></a>Limitations
+Since `events.sqs` is not used, you need to add SQS permissions manually:
 
-For now, the plugin only works with Lambda functions invoked by
+```yaml
+provider:
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - sqs:ReceiveMessage
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+          Resource: !GetAtt MyQueue.Arn
+```
 
-* API Gateway
-* Stream based (such as the triggered by Kinesis, DynamoDB Streams or SQS)
-* SNS based events
-* S3 events
-* CloudWatch Scheduled events
-* CloudWatch Logs
-* IoT rules
-* AppSync DataSources
+## Provisioned Concurrency + Auto Scaling
 
-[More events](https://serverless.com/framework/docs/providers/aws/events/) will be added soon.
+When both `provisionedConcurrency` and `autoScaling` are set, the plugin creates an `AWS::ApplicationAutoScaling::ScalableTarget` and a `TargetTrackingScaling` policy that adjusts provisioned concurrency based on utilization.
 
-## <a name="license"></a>License
+```yaml
+deploymentSettings:
+  type: BlueGreen
+  alias: live
+  provisionedConcurrency: 5      # minimum instances
+  autoScaling:
+    maxCapacity: 50              # maximum instances
+    targetUtilization: 0.7      # scale up when utilization exceeds 70% (default: 0.7)
+    scaleInCooldown: 600        # seconds to wait before scaling in (optional)
+    scaleOutCooldown: 30        # seconds to wait before scaling out (optional)
+```
 
-ISC © [David García](https://github.com/davidgf)
+## License
+
+ISC © Ariel Santos
+
+## Credits
+
+Inspired by [davidgf/serverless-plugin-lambda-deployments](https://github.com/davidgf/serverless-plugin-lambda-deployments) by David García Fernández, licensed under MIT.
