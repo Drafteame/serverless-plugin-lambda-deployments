@@ -1,4 +1,4 @@
-[![npm version](https://badge.fury.io/js/%40drafteame%2Fserverless-plugin-lambda-deployments.svg)](https://badge.fury.io/js/%40drafteame%2Fserverless-plugin-lambda-deployments)
+[![npm version](https://badge.fury.io/js/serverless-plugin-lambda-deployments.svg)](https://badge.fury.io/js/serverless-plugin-lambda-deployments)
 
 # serverless-plugin-lambda-deployments
 
@@ -16,7 +16,7 @@ A Serverless Framework v3 plugin that manages Lambda function aliases, providing
 ## Installation
 
 ```bash
-npm install --save-dev @drafteame/serverless-plugin-lambda-deployments
+npm install --save-dev serverless-plugin-lambda-deployments
 ```
 
 ## Usage
@@ -25,7 +25,7 @@ Add the plugin to your `serverless.yml`:
 
 ```yaml
 plugins:
-  - @drafteame/serverless-plugin-lambda-deployments
+  - serverless-plugin-lambda-deployments
 ```
 
 Then add `deploymentSettings` to any function you want to manage:
