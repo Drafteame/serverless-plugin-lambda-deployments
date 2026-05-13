@@ -77,11 +77,11 @@ aws lambda update-alias \
 
 ### Global defaults
 
-You can define shared settings under `custom.deploymentSettings` and reference them per function using YAML anchors:
+If `custom.deploymentSettings` includes an `alias`, the plugin applies to all functions automatically — no need to add `deploymentSettings` to each one. A function can still override the global config by defining its own `deploymentSettings`.
 
 ```yaml
 custom:
-  deploymentSettings: &deploymentDefaults
+  deploymentSettings:
     alias: live
     stages:
       - prod
@@ -90,11 +90,16 @@ custom:
 functions:
   functionA:
     handler: src/functionA.main
-    deploymentSettings: *deploymentDefaults
+    # inherits global deploymentSettings
 
   functionB:
     handler: src/functionB.main
-    deploymentSettings: *deploymentDefaults
+    # inherits global deploymentSettings
+
+  functionC:
+    handler: src/functionC.main
+    deploymentSettings:
+      alias: canary   # overrides global alias for this function only
 ```
 
 ## SQS support

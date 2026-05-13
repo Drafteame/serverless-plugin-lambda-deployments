@@ -31,8 +31,9 @@ class ServerlessLambdaDeployments {
   }
 
   get withDeploymentPreferencesFns () {
+    const globalAppliesToAll = Boolean(this.globalSettings.alias)
     return this.serverless.service.getAllFunctions()
-      .filter(name => _.has('deploymentSettings', this.service.getFunction(name)))
+      .filter(name => globalAppliesToAll || _.has('deploymentSettings', this.service.getFunction(name)))
   }
 
   get globalSettings () {
