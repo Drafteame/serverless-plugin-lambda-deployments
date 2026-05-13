@@ -85,6 +85,7 @@ jobs:
       - name: Publish to NPM
         uses: JS-DevTools/npm-publish@v4
         with:
+          token: ${{ secrets.NPM_TOKEN }}
           access: public
           strategy: upgrade
 
@@ -103,7 +104,7 @@ jobs:
 
       - name: Create Release
         env:
-          GH_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh release create ${{ needs.bump_version.outputs.version }} \
             --title ${{ needs.bump_version.outputs.version }} \
