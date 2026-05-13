@@ -3,7 +3,7 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Serverless Framework v3 plugin for Lambda alias management",
   "main": "serverless-plugin-lambda-deployments.js",
   "scripts": {
