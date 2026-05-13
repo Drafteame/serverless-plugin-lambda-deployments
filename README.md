@@ -81,42 +81,18 @@ functions:
 
 ## SQS support
 
-When using SQS with an alias, define the Event Source Mapping manually in `resources` instead of using `events.sqs`. This ensures the ESM points to the alias rather than `$LATEST`.
+SQS works out of the box. The plugin automatically intercepts the Event Source Mapping that Serverless generates from `events.sqs` and points it to the alias.
 
 ```yaml
 functions:
   sqsProcessor:
     handler: src/sqs.main
+    events:
+      - sqs:
+          arn: !GetAtt MyQueue.Arn
+          batchSize: 10
     deploymentSettings:
       alias: live
-
-resources:
-  Resources:
-    MyQueue:
-      Type: AWS::SQS::Queue
-
-    SqsProcessorESM:
-      Type: AWS::Lambda::EventSourceMapping
-      Properties:
-        EventSourceArn: !GetAtt MyQueue.Arn
-        FunctionName: !Sub "${AWS::StackName}-sqsProcessor:live"
-        BatchSize: 10
-        Enabled: true
-```
-
-Since `events.sqs` is not used, you need to add SQS permissions manually:
-
-```yaml
-provider:
-  iam:
-    role:
-      statements:
-        - Effect: Allow
-          Action:
-            - sqs:ReceiveMessage
-            - sqs:DeleteMessage
-            - sqs:GetQueueAttributes
-          Resource: !GetAtt MyQueue.Arn
 ```
 
 ## License
