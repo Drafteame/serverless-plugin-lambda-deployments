@@ -6,12 +6,29 @@ A Serverless Framework v3 plugin that manages Lambda function aliases, providing
 
 ## Contents
 
+- [Supported events](#supported-events)
 - [Installation](#installation)
 - [Usage](#usage)
 - [Configuration reference](#configuration-reference)
 - [SQS support](#sqs-support)
 - [License](#license)
 - [Credits](#credits)
+
+## Supported events
+
+The plugin automatically redirects all triggers to the alias for the following event types:
+
+- **HTTP / REST API** (`http`) — API Gateway v1
+- **HTTP API** (`httpApi`) — API Gateway v2, including authorizers
+- **SQS** (`sqs`)
+- **DynamoDB Streams / Kinesis** (`stream`)
+- **SNS** (`sns`)
+- **S3** (`s3`)
+- **Schedule / EventBridge** (`schedule`)
+- **CloudWatch Logs** (`cloudwatchLog`)
+- **IoT** (`iot`)
+- **AppSync** (`appSync`)
+- **Destinations** (`destinations` — `onSuccess` / `onFailure`)
 
 ## Installation
 
