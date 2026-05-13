@@ -10,7 +10,6 @@ A Serverless Framework v3 plugin that manages Lambda function aliases, providing
 - [Usage](#usage)
 - [Configuration reference](#configuration-reference)
 - [SQS support](#sqs-support)
-- [Provisioned Concurrency + Auto Scaling](#provisioned-concurrency--auto-scaling)
 - [License](#license)
 - [Credits](#credits)
 
@@ -26,7 +25,7 @@ Add the plugin to your `serverless.yml`:
 
 ```yaml
 plugins:
-  - '@drafteame/serverless-plugin-lambda-deployments'
+  - @drafteame/serverless-plugin-lambda-deployments
 ```
 
 Then add `deploymentSettings` to any function you want to manage:
@@ -56,8 +55,7 @@ aws lambda update-alias \
 |---|---|---|
 | `alias` | yes | Name of the Lambda alias to create (e.g. `live`) |
 | `stages` | no | List of stages where the plugin is active. If omitted, applies to all stages |
-| `provisionedConcurrency` | no | Number of provisioned concurrency instances (minimum when combined with `autoScaling`) |
-| `autoScaling` | no | Auto scaling config for provisioned concurrency. See below |
+| `provisionedConcurrency` | no | Number of provisioned concurrency instances to keep warm |
 
 ### Global defaults
 
@@ -80,8 +78,6 @@ functions:
     handler: src/functionB.main
     deploymentSettings: *deploymentDefaults
 ```
-
-Note: `stages` can be omitted from the anchor and set per-environment via `--stage` flag.
 
 ## SQS support
 
@@ -123,25 +119,10 @@ provider:
           Resource: !GetAtt MyQueue.Arn
 ```
 
-## Provisioned Concurrency + Auto Scaling
-
-When both `provisionedConcurrency` and `autoScaling` are set, the plugin creates an `AWS::ApplicationAutoScaling::ScalableTarget` and a `TargetTrackingScaling` policy that adjusts provisioned concurrency based on utilization.
-
-```yaml
-deploymentSettings:
-  alias: live
-  provisionedConcurrency: 5      # minimum instances
-  autoScaling:
-    maxCapacity: 50              # maximum instances
-    targetUtilization: 0.7      # scale up when utilization exceeds 70% (default: 0.7)
-    scaleInCooldown: 600        # seconds to wait before scaling in (optional)
-    scaleOutCooldown: 30        # seconds to wait before scaling out (optional)
-```
-
 ## License
 
-ISC © Ariel Santos
+ISC © Draftea
 
 ## Credits
 
-Inspired by [davidgf/serverless-plugin-lambda-deployments](https://github.com/davidgf/serverless-plugin-lambda-deployments) by David García Fernández, licensed under MIT.
+Inspired by [davidgf/serverless-plugin-canary-deployments](https://github.com/davidgf/serverless-plugin-canary-deployments) by David García Fernández, licensed under MIT.
