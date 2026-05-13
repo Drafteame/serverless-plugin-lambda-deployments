@@ -74,6 +74,7 @@ aws lambda update-alias \
 | `alias` | yes | Name of the Lambda alias to create (e.g. `live`) |
 | `stages` | no | List of stages where the plugin is active. If omitted, applies to all stages |
 | `provisionedConcurrency` | no | Number of provisioned concurrency instances to keep warm |
+| `enabled` | no | Set to `false` to exclude a specific function from the plugin. Default: `true` |
 
 ### Global defaults
 
@@ -100,6 +101,11 @@ functions:
     handler: src/functionC.main
     deploymentSettings:
       alias: canary   # overrides global for this function only
+
+  functionD:
+    handler: src/functionD.main
+    deploymentSettings:
+      enabled: false  # excluded from the plugin
 ```
 
 If `custom.deploymentSettings` does **not** include an `alias`, the global config is only used as a source of default values. Each function must define its own `deploymentSettings` with at least an `alias` to be processed by the plugin — functions without it are ignored.
