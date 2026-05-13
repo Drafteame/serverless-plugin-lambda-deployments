@@ -21,7 +21,8 @@ The plugin automatically redirects all triggers to the alias for the following e
 - **HTTP / REST API** (`http`) — API Gateway v1
 - **HTTP API** (`httpApi`) — API Gateway v2, including authorizers
 - **SQS** (`sqs`)
-- **DynamoDB Streams / Kinesis** (`stream`)
+- **DynamoDB Streams** (`stream`)
+- **Kinesis** (`stream`)
 - **SNS** (`sns`)
 - **S3** (`s3`)
 - **Schedule / EventBridge** (`schedule`)
