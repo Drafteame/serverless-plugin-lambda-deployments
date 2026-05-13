@@ -4,7 +4,7 @@
     "node": ">=18.0.0"
   },
   "version": "0.0.1",
-  "description": "Blue/Green and Canary deployments for AWS Lambda with Serverless Framework v3",
+  "description": "Serverless Framework v3 plugin for Lambda alias management",
   "main": "serverless-plugin-lambda-deployments.js",
   "scripts": {
     "test": "npm run lint && NODE_ENV=test ./node_modules/mocha/bin/mocha.js $(find ./ -name '*.test.js' -not -path '.*/node_modules/*')",
@@ -36,9 +36,8 @@
     "aws",
     "lambda",
     "serverless",
-    "canary",
-    "gradual",
-    "deployments"
+    "alias",
+    "deployment"
   ],
   "standard": {
     "globals": [

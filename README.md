@@ -2,7 +2,7 @@
 
 # serverless-plugin-lambda-deployments
 
-A Serverless Framework v3 plugin to manage Blue/Green deployments for AWS Lambda functions. No CodeDeploy required.
+A Serverless Framework v3 plugin that manages Lambda function aliases, providing a stable deployment target that decouples your triggers from specific function versions. Use it as a base for any deployment strategy you want to implement.
 
 ## Contents
 
