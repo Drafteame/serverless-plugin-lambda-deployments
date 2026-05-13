@@ -77,7 +77,7 @@ aws lambda update-alias \
 
 ### Global defaults
 
-If `custom.deploymentSettings` includes an `alias`, the plugin applies to all functions automatically — no need to add `deploymentSettings` to each one. A function can still override the global config by defining its own `deploymentSettings`.
+If `custom.deploymentSettings` includes an `alias`, the plugin applies to **all functions automatically** — no need to add `deploymentSettings` to each one. A function can override the global config by defining its own `deploymentSettings`.
 
 ```yaml
 custom:
@@ -90,17 +90,38 @@ custom:
 functions:
   functionA:
     handler: src/functionA.main
-    # inherits global deploymentSettings
+    # inherits alias: live from global
 
   functionB:
     handler: src/functionB.main
-    # inherits global deploymentSettings
+    # inherits alias: live from global
 
   functionC:
     handler: src/functionC.main
     deploymentSettings:
-      alias: canary   # overrides global alias for this function only
+      alias: canary   # overrides global for this function only
 ```
+
+If `custom.deploymentSettings` does **not** include an `alias`, the global config is only used as a source of default values. Each function must define its own `deploymentSettings` with at least an `alias` to be processed by the plugin — functions without it are ignored.
+
+```yaml
+custom:
+  deploymentSettings:
+    stages:           # no alias → does not activate the plugin globally
+      - prod
+
+functions:
+  functionA:
+    handler: src/functionA.main
+    deploymentSettings:
+      alias: live     # required — plugin processes this function
+
+  functionB:
+    handler: src/functionB.main
+    # no deploymentSettings → plugin ignores this function
+```
+
+> **Note on `stages`:** the stage filter is evaluated from `custom.deploymentSettings.stages`. If a function defines its own `stages`, it affects the merged config but not the global stage check. For consistent behavior, define `stages` only in `custom.deploymentSettings`.
 
 ## SQS support
 
@@ -124,4 +145,4 @@ ISC © Draftea
 
 ## Credits
 
-Inspired by [davidgf/serverless-plugin-canary-deployments](https://github.com/davidgf/serverless-plugin-canary-deployments) by David García Fernández, licensed under MIT.
+Inspired by [davidgf/serverless-plugin-canary-deployments](https://github.com/davidgf/serverless-plugin-canary-deployments) by David García Fernández, licensed under ISC.
