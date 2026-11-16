@@ -8,7 +8,7 @@ const { getInstalledPathSync } = require('get-installed-path')
 const ServerlessLambdaDeployments = require('./serverless-plugin-lambda-deployments')
 
 const serverlessPath = getInstalledPathSync('serverless', { local: true })
-const Serverless = require(`${serverlessPath}/lib/Serverless`)
+const Serverless = require(`${serverlessPath}/lib/serverless`)
 const serverlessVersion = parseInt(require(`${serverlessPath}/package.json`).version)
 const AwsProvider = serverlessVersion > 1
   ? require(`${serverlessPath}/lib/plugins/aws/provider`)
