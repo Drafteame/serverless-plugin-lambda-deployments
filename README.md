@@ -75,6 +75,8 @@ aws lambda update-alias \
 | `stages` | no | List of stages where the plugin is active. If omitted, applies to all stages |
 | `provisionedConcurrency` | no | Number of provisioned concurrency instances to keep warm |
 | `enabled` | no | Set to `false` to exclude a specific function from the plugin. Default: `true` |
+| `stableVersions.variables` | no | Environment variables that carry per-release values (e.g. the release commit). When a function's zip matches the code its alias runs, their deployed values are kept, so the function publishes no new version. See [Stable versions](#stable-versions) |
+| `syncAlias` | no | After each deploy, point the alias at the version the stack declares, even if it was moved outside CloudFormation. See [Alias sync](#alias-sync). Default: `false` |
 
 ### Global defaults
 
@@ -128,6 +130,38 @@ functions:
 ```
 
 > **Note on `stages`:** the stage filter is evaluated from `custom.deploymentSettings.stages`. If a function defines its own `stages`, it affects the merged config but not the global stage check. For consistent behavior, define `stages` only in `custom.deploymentSettings`.
+
+### Stable versions
+
+Serverless names each `AWS::Lambda::Version` after a hash of the function's zip **and** its configuration, environment variables included. A variable that changes on every release (a commit or version string) therefore publishes a new version of every function, moves every alias and cold-starts every function, even when only one changed.
+
+```yaml
+custom:
+  deploymentSettings:
+    alias: live
+    stableVersions:
+      variables: [APP_VERSION, DD_VERSION, DD_GIT_COMMIT_SHA]
+```
+
+Before the functions are compiled, the plugin compares each function's zip (sha256) with the `CodeSha256` of the version its alias runs (`$LATEST` when the alias does not exist yet):
+
+- **Same code:** the listed variables keep their deployed values, so the version hash does not change and CloudFormation publishes no new version. Each function keeps reporting the release in which its code last changed.
+- **Different code, new function, or AWS cannot be read:** the variables keep this deploy's values, as without the option. The plugin never fails a deploy.
+
+It needs reproducible zips (the same code must produce a byte-identical zip); otherwise every function counts as changed. It makes one `lambda:GetFunctionConfiguration` call per function.
+
+### Alias sync
+
+A tool that moves aliases outside CloudFormation (for example a rollback that points `live` at an older version) leaves the stack out of sync. A later deploy only moves the alias if the function's version changes, so redeploying the same code leaves the alias on the old version. With reproducible zips, and especially with `stableVersions`, that is the common case.
+
+```yaml
+custom:
+  deploymentSettings:
+    alias: live
+    syncAlias: true
+```
+
+After every deploy, including one Serverless skips because nothing changed, the plugin reads the stack's versions (`cloudformation:ListStackResources`) and, for each function whose alias points elsewhere, moves it to the stack's version (`lambda:GetAlias`, `lambda:UpdateAlias`). A failure is logged as a warning and does not fail the deploy.
 
 ## SQS support
 

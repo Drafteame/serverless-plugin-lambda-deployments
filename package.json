@@ -27,7 +27,7 @@
     "get-installed-path": "^4.0.8",
     "mocha": "^11.7.5",
     "serverless": "^3.40.0",
-    "standard": "*"
+    "standard": "^17.1.2"
   },
   "peerDependencies": {
     "serverless": ">= 1.26.0"

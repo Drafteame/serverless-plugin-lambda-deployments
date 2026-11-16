@@ -1,5 +1,7 @@
 'use strict'
 
+const crypto = require('crypto')
+const fs = require('fs')
 const _ = require('lodash/fp')
 const { flatten: flattenObject } = require('flat')
 const CfGenerators = require('./lib/CfTemplateGenerators')
@@ -14,14 +16,17 @@ const slsHasConfigSchema = sls =>
   sls.configSchemaHandler.defineFunctionProperties
 
 class ServerlessLambdaDeployments {
-  constructor (serverless, options) {
+  constructor (serverless, options, logging) {
     this.serverless = serverless
     this.options = options
     this.awsProvider = this.serverless.getProvider('aws')
     this.naming = this.awsProvider.naming
     this.service = this.serverless.service
+    this.log = (logging && logging.log) || { notice: console.log, warning: console.warn }
     this.hooks = {
-      'after:aws:package:finalize:mergeCustomProviderResources': this.addDeploymentResources.bind(this)
+      'before:package:compileFunctions': this.stabilizeVersions.bind(this),
+      'after:aws:package:finalize:mergeCustomProviderResources': this.addDeploymentResources.bind(this),
+      'after:deploy:deploy': this.syncAliases.bind(this)
     }
     this.addConfigSchema()
   }
@@ -53,10 +58,107 @@ class ServerlessLambdaDeployments {
   }
 
   addDeploymentResources () {
-    if (this.shouldDeploy()) {
-      const functionsResources = this.buildFunctionsResources()
-      Object.assign(this.compiledTpl.Resources, ...functionsResources)
+    if (!this.shouldDeploy()) return
+    // Apply each function's resources before building the next one: a resource shared by
+    // several functions (an SNS topic or S3 bucket created by Serverless) must keep every
+    // function's alias, not only the last one's.
+    for (const name of this.withDeploymentPreferencesFns) {
+      Object.assign(this.compiledTpl.Resources, ...this.buildFunctionResources(name))
     }
+  }
+
+  // stableVersions: when a function's zip is byte-identical to the code its alias runs, keep
+  // the deployed values of the listed environment variables (e.g. the release commit), so its
+  // AWS::Lambda::Version hash does not change and no new version is published.
+  async stabilizeVersions () {
+    const names = this.functionsWith('stableVersions')
+    if (names.length === 0) return
+    const results = await Promise.all(names.map(name => this.stabilizeFunction(name)))
+    const count = result => results.filter(r => r === result).length
+    this.log.notice(`lambda-deployments: ${count('kept')} functions unchanged (deployed version kept), ${count('changed')} with new code, ${count('skipped')} skipped`)
+  }
+
+  async stabilizeFunction (name) {
+    const fn = this.service.getFunction(name)
+    const { alias, stableVersions } = this.getDeploymentSettingsFor(name)
+    const providerEnvironment = this.service.provider.environment || {}
+    const variables = (stableVersions.variables || [])
+      .filter(key => key in providerEnvironment || (fn.environment && key in fn.environment))
+    const artifact = _.get('package.artifact', fn) || _.get('package.artifact', this.service)
+    if (variables.length === 0 || !artifact || !fs.existsSync(artifact)) return 'skipped'
+
+    const sha = crypto.createHash('sha256').update(fs.readFileSync(artifact)).digest('base64')
+    const deployed = await this.getDeployedConfiguration(fn.name, alias)
+    if (!deployed || deployed.CodeSha256 !== sha) return 'changed'
+
+    const deployedVariables = _.getOr({}, 'Environment.Variables', deployed)
+    fn.environment = fn.environment || {}
+    for (const key of variables) {
+      if (deployedVariables[key] !== undefined) fn.environment[key] = deployedVariables[key]
+    }
+    return 'kept'
+  }
+
+  // Configuration the alias points to, or $LATEST when the alias does not exist yet. Returns
+  // null for a new function or when AWS cannot be read: the deploy then uses its own values,
+  // which is the behavior without stableVersions.
+  async getDeployedConfiguration (functionName, alias) {
+    for (const params of [{ FunctionName: functionName, Qualifier: alias }, { FunctionName: functionName }]) {
+      try {
+        return await this.awsProvider.request('Lambda', 'getFunctionConfiguration', params)
+      } catch (error) {
+        if (isNotFound(error)) continue
+        this.log.warning(`lambda-deployments: cannot read ${functionName} (${error.code || error.message}), publishing a new version`)
+        return null
+      }
+    }
+    return null
+  }
+
+  // syncAlias: after a deploy, point each alias at the version the stack declares. Aliases moved
+  // outside CloudFormation (e.g. by a rollback tool) are otherwise left behind whenever the
+  // deploy does not change the function's version, such as redeploying the same release.
+  async syncAliases () {
+    const names = this.functionsWith('syncAlias')
+    if (names.length === 0) return
+    const stackVersions = await this.getStackVersions()
+    await Promise.all(names.map(name => this.syncAlias(name, stackVersions)))
+  }
+
+  async syncAlias (name, stackVersions) {
+    const fn = this.service.getFunction(name)
+    const { alias } = this.getDeploymentSettingsFor(name)
+    const expected = stackVersions[this.getVersionNameFor(this.naming.getLambdaLogicalId(name))]
+    if (!expected) return
+    try {
+      const current = await this.awsProvider.request('Lambda', 'getAlias', { FunctionName: fn.name, Name: alias })
+      if (current.FunctionVersion === expected) return
+      await this.awsProvider.request('Lambda', 'updateAlias', { FunctionName: fn.name, Name: alias, FunctionVersion: expected })
+      this.log.notice(`lambda-deployments: alias ${alias} of ${fn.name} moved from version ${current.FunctionVersion} to ${expected} (the stack's version)`)
+    } catch (error) {
+      this.log.warning(`lambda-deployments: cannot sync alias ${alias} of ${fn.name} to version ${expected} (${error.code || error.message})`)
+    }
+  }
+
+  // Lambda version number of every AWS::Lambda::Version in the deployed stack, by logical id.
+  async getStackVersions () {
+    const versions = {}
+    let NextToken
+    do {
+      const page = await this.awsProvider.request('CloudFormation', 'listStackResources', { StackName: this.naming.getStackName(), NextToken })
+      for (const r of page.StackResourceSummaries || []) {
+        if (r.ResourceType === 'AWS::Lambda::Version' && r.PhysicalResourceId) {
+          versions[r.LogicalResourceId] = r.PhysicalResourceId.split(':').pop()
+        }
+      }
+      NextToken = page.NextToken
+    } while (NextToken)
+    return versions
+  }
+
+  functionsWith (setting) {
+    if (!this.shouldDeploy()) return []
+    return this.withDeploymentPreferencesFns.filter(name => this.getDeploymentSettingsFor(name)[setting])
   }
 
   shouldDeploy () {
@@ -66,13 +168,6 @@ class ServerlessLambdaDeployments {
   currentStageEnabled () {
     const enabledStages = _.getOr([], 'stages', this.globalSettings)
     return _.isEmpty(enabledStages) || _.includes(this.currentStage, enabledStages)
-  }
-
-  buildFunctionsResources () {
-    return _.flatMap(
-      serverlessFunction => this.buildFunctionResources(serverlessFunction),
-      this.withDeploymentPreferencesFns
-    )
   }
 
   buildFunctionResources (serverlessFnName) {
@@ -88,6 +183,9 @@ class ServerlessLambdaDeployments {
   buildFunctionAlias ({ deploymentSettings = {}, functionName }) {
     const { alias, provisionedConcurrency } = deploymentSettings
     const functionVersion = this.getVersionNameFor(functionName)
+    if (!functionVersion) {
+      throw new Error(`lambda-deployments: ${functionName} has no AWS::Lambda::Version to point the alias at; enable versionFunctions for it or set deploymentSettings.enabled: false`)
+    }
     const logicalName = `${functionName}Alias${alias}`
     const template = CfGenerators.lambda.buildAlias({ alias, functionName, functionVersion, provisionedConcurrency })
     return { [logicalName]: template }
@@ -347,6 +445,13 @@ class ServerlessLambdaDeployments {
     const fnDeploymentSetting = this.service.getFunction(slsFunctionName).deploymentSettings
     return Object.assign({}, this.globalSettings, fnDeploymentSetting)
   }
+}
+
+// Serverless v3 wraps AWS errors with a code (AWS_LAMBDA_..._RESOURCE_NOT_FOUND_EXCEPTION); the
+// osls provider.request shim only keeps the message ("Error calling Lambda.x: Function not found: ...").
+function isNotFound (error) {
+  const text = [error && error.code, error && error.providerError && error.providerError.code, error && error.message].join(' ')
+  return /resource_?not_?found|(function|alias) not found/i.test(text)
 }
 
 module.exports = ServerlessLambdaDeployments
