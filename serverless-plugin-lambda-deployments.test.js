@@ -112,6 +112,20 @@ describe('ServerlessLambdaDeployments', () => {
       expect(plugin.service.getFunction('a').environment).to.deep.equal(deployed)
     })
 
+    it('recognizes a missing alias from the osls provider.request shim, which drops the error code', async () => {
+      const zip = zipFile('same binary')
+      const plugin = fakePlugin({
+        settings,
+        artifact: zip.file,
+        request: async (_service, _method, params) => {
+          if (params.Qualifier) throw new Error('Error calling Lambda.getFunctionConfiguration: Function not found: arn:aws:lambda:us-east-2:1:function:svc-dev-a:live')
+          return { CodeSha256: zip.sha, Environment: { Variables: deployed } }
+        }
+      })
+      await plugin.stabilizeVersions()
+      expect(plugin.service.getFunction('a').environment).to.deep.equal(deployed)
+    })
+
     it('never fails the deploy when AWS cannot be read', async () => {
       const zip = zipFile('binary')
       const plugin = fakePlugin({ settings, artifact: zip.file, request: async () => { throw Object.assign(new Error('Rate exceeded'), { code: 'THROTTLED' }) } })

@@ -447,10 +447,11 @@ class ServerlessLambdaDeployments {
   }
 }
 
-// Serverless wraps AWS errors (code AWS_LAMBDA_..._RESOURCE_NOT_FOUND_EXCEPTION).
+// Serverless v3 wraps AWS errors with a code (AWS_LAMBDA_..._RESOURCE_NOT_FOUND_EXCEPTION); the
+// osls provider.request shim only keeps the message ("Error calling Lambda.x: Function not found: ...").
 function isNotFound (error) {
-  const codes = [error && error.code, error && error.providerError && error.providerError.code].join(' ')
-  return /resource_?not_?found/i.test(codes)
+  const text = [error && error.code, error && error.providerError && error.providerError.code, error && error.message].join(' ')
+  return /resource_?not_?found|(function|alias) not found/i.test(text)
 }
 
 module.exports = ServerlessLambdaDeployments
