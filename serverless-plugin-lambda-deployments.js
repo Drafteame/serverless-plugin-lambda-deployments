@@ -121,7 +121,13 @@ class ServerlessLambdaDeployments {
   async syncAliases () {
     const names = this.functionsWith('syncAlias')
     if (names.length === 0) return
-    const stackVersions = await this.getStackVersions()
+    let stackVersions
+    try {
+      stackVersions = await this.getStackVersions()
+    } catch (error) {
+      this.log.warning(`lambda-deployments: cannot read the stack's versions, aliases not synced (${error.code || error.message})`)
+      return
+    }
     await Promise.all(names.map(name => this.syncAlias(name, stackVersions)))
   }
 

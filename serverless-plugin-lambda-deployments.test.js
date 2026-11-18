@@ -177,6 +177,15 @@ describe('ServerlessLambdaDeployments', () => {
       await plugin.syncAliases()
     })
 
+    it('never fails the deploy when the stack resources cannot be listed', async () => {
+      const warnings = []
+      const plugin = fakePlugin({ settings, request: async () => { throw Object.assign(new Error('not authorized'), { code: 'AccessDenied' }) } })
+      plugin.log = { notice () {}, warning: w => warnings.push(w) }
+      await plugin.syncAliases()
+      expect(warnings).to.have.lengthOf(1)
+      expect(warnings[0]).to.match(/aliases not synced \(AccessDenied\)/)
+    })
+
     it('does not call AWS when syncAlias is not set', async () => {
       await fakePlugin({ request: async () => { throw new Error('unexpected call') } }).syncAliases()
     })
