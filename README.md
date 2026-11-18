@@ -166,7 +166,8 @@ custom:
 - The bucket's SSE/KMS settings (`provider.deploymentBucketObject`) apply to the uploads.
 - If `HeadObject` fails the zip is uploaded anyway. If the upload fails, the function goes back to the deploy folder's key and the deploy continues.
 - `maxPreviousDeploymentArtifacts` cleanup and `serverless-plugin-s3-remover` only match deploy folders (`<timestamp>-<date>`), so they leave `code/` alone.
-- Old zips pile up in `code/`. Expire them with a bucket lifecycle rule, e.g. 30 days on the `serverless/<service>/<stage>/code/` prefix. A rollback tool that moves the alias between published versions does not read these zips; only a redeploy of an old release re-uploads what it needs.
+- Do not expire `code/` with a bucket lifecycle rule. A function that has not changed in months still points at an old zip, and if a deploy of that function fails CloudFormation rolls it back to that key: with the zip gone the stack ends in `UPDATE_ROLLBACK_FAILED`. Only a new zip is uploaded when the code changes, so the S3 cost is small. If it grows, clean up by deleting only the keys the current stack does not use.
+- It needs the zips in the same run: `sls deploy --package` on a package built earlier with `sls package` would point at `code/` without ever uploading the zips. Package and deploy in one run.
 
 ### Alias sync
 

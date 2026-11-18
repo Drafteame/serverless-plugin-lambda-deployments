@@ -142,9 +142,19 @@ class ServerlessLambdaDeployments {
     if (this.service.provider.shouldNotDeploy) return
     const entries = _.values(this.contentArtifacts || {})
     if (entries.length === 0) return
-    const bucket = await this.getDeploymentBucket()
+    const bucket = await this.awsProvider.getServerlessDeploymentBucketName()
     const byKey = _.groupBy('key', entries)
-    const results = await Promise.all(Object.entries(byKey).map(([key, group]) => this.uploadIfMissing(bucket, key, group)))
+    // A few zips at a time, as Serverless does, so a first deploy of many functions does not
+    // open every zip at once.
+    const pending = Object.entries(byKey)
+    const results = []
+    const worker = async () => {
+      while (pending.length) {
+        const [key, group] = pending.shift()
+        results.push(await this.uploadIfMissing(bucket, key, group))
+      }
+    }
+    await Promise.all(Array.from({ length: MAX_CONCURRENT_UPLOADS }, worker))
     const uploaded = results.filter(Boolean).length
     this.log.notice(`lambda-deployments: ${uploaded} zips uploaded to code/, ${results.length - uploaded} already there`)
   }
@@ -159,7 +169,7 @@ class ServerlessLambdaDeployments {
       }
     }
     try {
-      const params = { Bucket: bucket, Key: key, Body: fs.readFileSync(group[0].artifact), ContentType: 'application/zip' }
+      const params = { Bucket: bucket, Key: key, Body: fs.createReadStream(group[0].artifact), ContentType: 'application/zip' }
       const options = _.pathOr({}, 'provider.deploymentBucketObject', this.service)
       for (const [setting, param] of ENCRYPTION_FIELDS) {
         if (options[setting]) params[param] = options[setting]
@@ -171,10 +181,6 @@ class ServerlessLambdaDeployments {
       for (const { properties, originalKey } of group) properties.Code.S3Key = originalKey
       return false
     }
-  }
-
-  async getDeploymentBucket () {
-    return _.get('package.deploymentBucket', this.service) || this.awsProvider.getServerlessDeploymentBucketName()
   }
 
   // Configuration the alias points to, or $LATEST when the alias does not exist yet. Returns
@@ -530,6 +536,8 @@ class ServerlessLambdaDeployments {
     return Object.assign({}, this.globalSettings, fnDeploymentSetting)
   }
 }
+
+const MAX_CONCURRENT_UPLOADS = 3
 
 // Same fields as Serverless' set-s3-upload-encryption-options ("Algorithim" is its spelling).
 const ENCRYPTION_FIELDS = [
