@@ -140,6 +140,82 @@ describe('ServerlessLambdaDeployments', () => {
     })
   })
 
+  describe('contentAddressedArtifacts', () => {
+    const settings = { alias: 'live', contentAddressedArtifacts: true }
+    const oldKey = 'serverless/svc/dev/1700-2024-01-01T00:00:00/fn.zip'
+    const codeResources = () => {
+      const resources = fnResources('A')
+      resources.ALambdaFunction.Properties = { Code: { S3Bucket: { Ref: 'ServerlessDeploymentBucket' }, S3Key: oldKey } }
+      return resources
+    }
+    const run = async ({ settings: s = settings, request, zip = zipFile('binary') } = {}) => {
+      const resources = codeResources()
+      const plugin = fakePlugin({ settings: s, artifact: zip.file, resources, functions: ['a'], request })
+      plugin.addressArtifactsByContent()
+      await plugin.uploadMissingArtifacts()
+      return { resources, plugin, key: `serverless/svc/dev/code/${zip.hex}.zip` }
+    }
+
+    it('rewrites the S3Key to the sha256 of the zip', async () => {
+      const zip = zipFile('binary')
+      const { resources, key } = await run({ zip, request: async () => ({}) })
+      expect(resources.ALambdaFunction.Properties.Code.S3Key).to.equal(key)
+    })
+
+    it('uploads only the zips code/ does not have', async () => {
+      const calls = []
+      const request = async (_s, method, params) => {
+        calls.push([method, params.Key, params.ServerSideEncryption])
+        if (method === 'headObject') throw Object.assign(new Error('x'), { code: 'AWS_S3_HEAD_OBJECT_NOT_FOUND' })
+        return {}
+      }
+      const { key } = await run({ request })
+      expect(calls).to.deep.equal([['headObject', key, undefined], ['upload', key, undefined]])
+    })
+
+    it('does not upload a zip that code/ already has', async () => {
+      const calls = []
+      await run({ request: async (_s, method) => { calls.push(method); return {} } })
+      expect(calls).to.deep.equal(['headObject'])
+    })
+
+    it('uploads anyway when HeadObject fails', async () => {
+      const calls = []
+      const { resources, key } = await run({
+        request: async (_s, method) => {
+          calls.push(method)
+          if (method === 'headObject') throw Object.assign(new Error('denied'), { code: 'AWS_S3_HEAD_OBJECT_FORBIDDEN' })
+          return {}
+        }
+      })
+      expect(calls).to.deep.equal(['headObject', 'upload'])
+      expect(resources.ALambdaFunction.Properties.Code.S3Key).to.equal(key)
+    })
+
+    it('puts the function back on the deploy folder when the upload fails', async () => {
+      const { resources } = await run({
+        request: async (_s, method) => { throw Object.assign(new Error(method), { code: 'AWS_S3_ERROR' }) }
+      })
+      expect(resources.ALambdaFunction.Properties.Code.S3Key).to.equal(oldKey)
+    })
+
+    it('does not touch the template or call AWS when the option is off', async () => {
+      const { resources } = await run({
+        settings: { alias: 'live' },
+        request: async () => { throw new Error('unexpected call') }
+      })
+      expect(resources.ALambdaFunction.Properties.Code.S3Key).to.equal(oldKey)
+    })
+
+    it('does not upload when Serverless found no changes to deploy', async () => {
+      const zip = zipFile('binary')
+      const plugin = fakePlugin({ settings, artifact: zip.file, resources: codeResources(), functions: ['a'], request: async () => { throw new Error('unexpected call') } })
+      plugin.addressArtifactsByContent()
+      plugin.service.provider.shouldNotDeploy = true
+      await plugin.uploadMissingArtifacts()
+    })
+  })
+
   describe('syncAliases', () => {
     const settings = { alias: 'live', syncAlias: true }
     const stackPages = [
@@ -206,6 +282,7 @@ function fakePlugin ({ settings = { alias: 'live' }, functions, resources, artif
   const names = functions || (resources ? ['a', 'b'] : ['a'])
   const fns = Object.fromEntries(names.map(n => [n, { name: `svc-dev-${n}`, package: { artifact } }]))
   const service = {
+    service: 'svc',
     provider: { environment: { APP_VERSION: 'new' }, compiledCloudFormationTemplate: { Resources: resources || fnResources('A') } },
     custom: { deploymentSettings: settings },
     getAllFunctions: () => names,
@@ -214,6 +291,8 @@ function fakePlugin ({ settings = { alias: 'live' }, functions, resources, artif
   const provider = {
     naming: { getLambdaLogicalId: n => `${n.toUpperCase()}LambdaFunction`, getStackName: () => 'svc-dev' },
     getStage: () => 'dev',
+    getDeploymentPrefix: () => 'serverless',
+    getServerlessDeploymentBucketName: async () => 'bucket',
     request
   }
   const quiet = { log: { notice () {}, warning () {} } }
@@ -223,7 +302,8 @@ function fakePlugin ({ settings = { alias: 'live' }, functions, resources, artif
 function zipFile (content) {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sld-')), 'fn.zip')
   fs.writeFileSync(file, content)
-  return { file, sha: crypto.createHash('sha256').update(content).digest('base64') }
+  const digest = crypto.createHash('sha256').update(content).digest()
+  return { file, sha: digest.toString('base64'), hex: digest.toString('hex') }
 }
 
 function notFound () {

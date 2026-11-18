@@ -25,7 +25,11 @@ class ServerlessLambdaDeployments {
     this.log = (logging && logging.log) || { notice: console.log, warning: console.warn }
     this.hooks = {
       'before:package:compileFunctions': this.stabilizeVersions.bind(this),
-      'after:aws:package:finalize:mergeCustomProviderResources': this.addDeploymentResources.bind(this),
+      'after:aws:package:finalize:mergeCustomProviderResources': () => {
+        this.addDeploymentResources()
+        this.addressArtifactsByContent()
+      },
+      'before:aws:deploy:deploy:uploadArtifacts': this.uploadMissingArtifacts.bind(this),
       'after:deploy:deploy': this.syncAliases.bind(this)
     }
     this.addConfigSchema()
@@ -84,10 +88,10 @@ class ServerlessLambdaDeployments {
     const providerEnvironment = this.service.provider.environment || {}
     const variables = (stableVersions.variables || [])
       .filter(key => key in providerEnvironment || (fn.environment && key in fn.environment))
-    const artifact = _.get('package.artifact', fn) || _.get('package.artifact', this.service)
+    const artifact = this.artifactOf(fn)
     if (variables.length === 0 || !artifact || !fs.existsSync(artifact)) return 'skipped'
 
-    const sha = crypto.createHash('sha256').update(fs.readFileSync(artifact)).digest('base64')
+    const sha = this.artifactDigest(artifact).toString('base64')
     const deployed = await this.getDeployedConfiguration(fn.name, alias)
     if (!deployed || deployed.CodeSha256 !== sha) return 'changed'
 
@@ -97,6 +101,80 @@ class ServerlessLambdaDeployments {
       if (deployedVariables[key] !== undefined) fn.environment[key] = deployedVariables[key]
     }
     return 'kept'
+  }
+
+  artifactOf (fn) {
+    return _.get('package.artifact', fn) || _.get('package.artifact', this.service)
+  }
+
+  artifactDigest (artifact) {
+    this.digests = this.digests || {}
+    if (!this.digests[artifact]) this.digests[artifact] = crypto.createHash('sha256').update(fs.readFileSync(artifact)).digest()
+    return this.digests[artifact]
+  }
+
+  // contentAddressedArtifacts: Serverless uploads the zips to a new folder on every deploy, so
+  // every function's Code.S3Key changes and CloudFormation runs UpdateFunctionCode on all of
+  // them even when the zip is identical. Point each function at <prefix>/<service>/<stage>/code/<sha256>.zip
+  // instead: the key only changes when the code does.
+  addressArtifactsByContent () {
+    this.contentArtifacts = {}
+    const prefix = `${this.awsProvider.getDeploymentPrefix()}/${this.service.service}/${this.currentStage}/code`
+    for (const name of this.functionsWith('contentAddressedArtifacts')) {
+      const fn = this.service.getFunction(name)
+      const artifact = this.artifactOf(fn)
+      const properties = _.get(`${this.naming.getLambdaLogicalId(name)}.Properties`, this.compiledTpl.Resources)
+      if (fn.image || !artifact || !fs.existsSync(artifact) || !properties || !properties.Code || !properties.Code.S3Key) continue
+      this.contentArtifacts[name] = {
+        artifact,
+        properties,
+        originalKey: properties.Code.S3Key,
+        key: `${prefix}/${this.artifactDigest(artifact).toString('hex')}.zip`
+      }
+      properties.Code.S3Key = this.contentArtifacts[name].key
+    }
+  }
+
+  // Upload the zips that code/ does not have yet. Serverless still uploads its own copy to the
+  // deploy folder, which "No changes to deploy" compares against. A failed HeadObject just
+  // uploads again; a failed upload puts the function back on the deploy folder's key.
+  async uploadMissingArtifacts () {
+    if (this.service.provider.shouldNotDeploy) return
+    const entries = _.values(this.contentArtifacts || {})
+    if (entries.length === 0) return
+    const bucket = await this.getDeploymentBucket()
+    const byKey = _.groupBy('key', entries)
+    const results = await Promise.all(Object.entries(byKey).map(([key, group]) => this.uploadIfMissing(bucket, key, group)))
+    const uploaded = results.filter(Boolean).length
+    this.log.notice(`lambda-deployments: ${uploaded} zips uploaded to code/, ${results.length - uploaded} already there`)
+  }
+
+  async uploadIfMissing (bucket, key, group) {
+    try {
+      await this.awsProvider.request('S3', 'headObject', { Bucket: bucket, Key: key })
+      return false
+    } catch (error) {
+      if (!/not_?found|404/i.test([error && error.code, error && error.message].join(' '))) {
+        this.log.warning(`lambda-deployments: cannot check s3://${bucket}/${key} (${error.code || error.message}), uploading it`)
+      }
+    }
+    try {
+      const params = { Bucket: bucket, Key: key, Body: fs.readFileSync(group[0].artifact), ContentType: 'application/zip' }
+      const options = _.pathOr({}, 'provider.deploymentBucketObject', this.service)
+      for (const [setting, param] of ENCRYPTION_FIELDS) {
+        if (options[setting]) params[param] = options[setting]
+      }
+      await this.awsProvider.request('S3', 'upload', params)
+      return true
+    } catch (error) {
+      this.log.warning(`lambda-deployments: cannot upload s3://${bucket}/${key} (${error.code || error.message}), its functions use the deploy folder`)
+      for (const { properties, originalKey } of group) properties.Code.S3Key = originalKey
+      return false
+    }
+  }
+
+  async getDeploymentBucket () {
+    return _.get('package.deploymentBucket', this.service) || this.awsProvider.getServerlessDeploymentBucketName()
   }
 
   // Configuration the alias points to, or $LATEST when the alias does not exist yet. Returns
@@ -452,6 +530,15 @@ class ServerlessLambdaDeployments {
     return Object.assign({}, this.globalSettings, fnDeploymentSetting)
   }
 }
+
+// Same fields as Serverless' set-s3-upload-encryption-options ("Algorithim" is its spelling).
+const ENCRYPTION_FIELDS = [
+  ['serverSideEncryption', 'ServerSideEncryption'],
+  ['sseCustomerAlgorithim', 'SSECustomerAlgorithm'],
+  ['sseCustomerKey', 'SSECustomerKey'],
+  ['sseCustomerKeyMD5', 'SSECustomerKeyMD5'],
+  ['sseKMSKeyId', 'SSEKMSKeyId']
+]
 
 // Serverless v3 wraps AWS errors with a code (AWS_LAMBDA_..._RESOURCE_NOT_FOUND_EXCEPTION); the
 // osls provider.request shim only keeps the message ("Error calling Lambda.x: Function not found: ...").
