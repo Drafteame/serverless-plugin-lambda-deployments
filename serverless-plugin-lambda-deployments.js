@@ -123,11 +123,12 @@ class ServerlessLambdaDeployments {
     for (const name of this.functionsWith('contentAddressedArtifacts')) {
       const fn = this.service.getFunction(name)
       const artifact = this.artifactOf(fn)
-      const properties = _.get(`${this.naming.getLambdaLogicalId(name)}.Properties`, this.compiledTpl.Resources)
+      const logicalId = this.naming.getLambdaLogicalId(name)
+      const properties = _.get(`${logicalId}.Properties`, this.compiledTpl.Resources)
       if (fn.image || !artifact || !fs.existsSync(artifact) || !properties || !properties.Code || !properties.Code.S3Key) continue
       this.contentArtifacts[name] = {
         artifact,
-        properties,
+        logicalId,
         originalKey: properties.Code.S3Key,
         key: `${prefix}/${this.artifactDigest(artifact).toString('hex')}.zip`
       }
@@ -137,7 +138,7 @@ class ServerlessLambdaDeployments {
 
   // Upload the zips that code/ does not have yet. Serverless still uploads its own copy to the
   // deploy folder, which "No changes to deploy" compares against. A failed HeadObject just
-  // uploads again; a failed upload puts the function back on the deploy folder's key.
+  // uploads; a failed upload puts the function back on the deploy folder's key.
   async uploadMissingArtifacts () {
     if (this.service.provider.shouldNotDeploy) return
     const entries = _.values(this.contentArtifacts || {})
@@ -155,31 +156,34 @@ class ServerlessLambdaDeployments {
       }
     }
     await Promise.all(Array.from({ length: MAX_CONCURRENT_UPLOADS }, worker))
-    const uploaded = results.filter(Boolean).length
-    this.log.notice(`lambda-deployments: ${uploaded} zips uploaded to code/, ${results.length - uploaded} already there`)
+    const count = result => results.filter(r => r === result).length
+    this.log.notice(`lambda-deployments: ${count('uploaded')} zips uploaded to code/, ${count('present')} already there, ${count('failed')} failed (deploy folder used)`)
   }
 
   async uploadIfMissing (bucket, key, group) {
     try {
       await this.awsProvider.request('S3', 'headObject', { Bucket: bucket, Key: key })
-      return false
+      return 'present'
     } catch (error) {
-      if (!/not_?found|404/i.test([error && error.code, error && error.message].join(' '))) {
-        this.log.warning(`lambda-deployments: cannot check s3://${bucket}/${key} (${error.code || error.message}), uploading it`)
-      }
+      // Missing or unreadable, upload it. A missing key is a 404, which the osls shim reports
+      // as UnknownError (HEAD responses have no body), so the error is not inspected.
     }
     try {
-      const params = { Bucket: bucket, Key: key, Body: fs.createReadStream(group[0].artifact), ContentType: 'application/zip' }
+      const { artifact } = group[0]
+      const params = { Bucket: bucket, Key: key, Body: fs.createReadStream(artifact), ContentLength: fs.statSync(artifact).size, ContentType: 'application/zip' }
       const options = _.pathOr({}, 'provider.deploymentBucketObject', this.service)
       for (const [setting, param] of ENCRYPTION_FIELDS) {
         if (options[setting]) params[param] = options[setting]
       }
-      await this.awsProvider.request('S3', 'upload', params)
-      return true
+      // putObject, not upload: the osls provider.request shim (AWS SDK v3) has no upload.
+      await this.awsProvider.request('S3', 'putObject', params)
+      return 'uploaded'
     } catch (error) {
       this.log.warning(`lambda-deployments: cannot upload s3://${bucket}/${key} (${error.code || error.message}), its functions use the deploy folder`)
-      for (const { properties, originalKey } of group) properties.Code.S3Key = originalKey
-      return false
+      // Serverless reloads the template from the package before deploying, so look the
+      // functions up in the current one, not in the template this plugin rewrote.
+      for (const { logicalId, originalKey } of group) this.compiledTpl.Resources[logicalId].Properties.Code.S3Key = originalKey
+      return 'failed'
     }
   }
 

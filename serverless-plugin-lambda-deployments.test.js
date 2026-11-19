@@ -170,7 +170,7 @@ describe('ServerlessLambdaDeployments', () => {
         return {}
       }
       const { key } = await run({ request })
-      expect(calls).to.deep.equal([['headObject', key, undefined], ['upload', key, undefined]])
+      expect(calls).to.deep.equal([['headObject', key, undefined], ['putObject', key, undefined]])
     })
 
     it('does not upload a zip that code/ already has', async () => {
@@ -188,15 +188,20 @@ describe('ServerlessLambdaDeployments', () => {
           return {}
         }
       })
-      expect(calls).to.deep.equal(['headObject', 'upload'])
+      expect(calls).to.deep.equal(['headObject', 'putObject'])
       expect(resources.ALambdaFunction.Properties.Code.S3Key).to.equal(key)
     })
 
     it('puts the function back on the deploy folder when the upload fails', async () => {
-      const { resources } = await run({
-        request: async (_s, method) => { throw Object.assign(new Error(method), { code: 'AWS_S3_ERROR' }) }
-      })
-      expect(resources.ALambdaFunction.Properties.Code.S3Key).to.equal(oldKey)
+      const zip = zipFile('binary')
+      const request = async (_s, method) => { throw Object.assign(new Error(method), { code: 'AWS_S3_ERROR' }) }
+      const plugin = fakePlugin({ settings, artifact: zip.file, resources: codeResources(), functions: ['a'], request })
+      plugin.addressArtifactsByContent()
+      // Before deploying, Serverless reloads the packaged state, which replaces the template object.
+      const reloaded = JSON.parse(JSON.stringify(plugin.service.provider.compiledCloudFormationTemplate))
+      plugin.service.provider = { ...plugin.service.provider, compiledCloudFormationTemplate: reloaded }
+      await plugin.uploadMissingArtifacts()
+      expect(reloaded.Resources.ALambdaFunction.Properties.Code.S3Key).to.equal(oldKey)
     })
 
     it('does not touch the template or call AWS when the option is off', async () => {
