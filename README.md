@@ -76,6 +76,7 @@ aws lambda update-alias \
 | `provisionedConcurrency` | no | Number of provisioned concurrency instances to keep warm |
 | `enabled` | no | Set to `false` to exclude a specific function from the plugin. Default: `true` |
 | `stableVersions.variables` | no | Environment variables that carry per-release values (e.g. the release commit). When a function's zip matches the code its alias runs, their deployed values are kept, so the function publishes no new version. See [Stable versions](#stable-versions) |
+| `contentAddressedArtifacts` | no | Name the uploaded zips by their sha256 so unchanged functions keep their `Code.S3Key`. See [Content-addressed artifacts](#content-addressed-artifacts). Default: `false` |
 | `syncAlias` | no | After each deploy, point the alias at the version the stack declares, even if it was moved outside CloudFormation. See [Alias sync](#alias-sync). Default: `false` |
 
 ### Global defaults
@@ -149,6 +150,24 @@ Before the functions are compiled, the plugin compares each function's zip (sha2
 - **Different code, new function, or AWS cannot be read:** the variables keep this deploy's values, as without the option. The plugin never fails a deploy.
 
 It needs reproducible zips (the same code must produce a byte-identical zip); otherwise every function counts as changed. It makes one `lambda:GetFunctionConfiguration` call per function.
+
+### Content-addressed artifacts
+
+Serverless uploads the zips to a new folder on every deploy, so every function's `Code.S3Key` changes and CloudFormation runs `UpdateFunctionCode` on all functions, even when the zip is identical. With `contentAddressedArtifacts: true` the plugin points each function at `serverless/<service>/<stage>/code/<sha256>.zip` instead, and uploads (before Serverless uploads its artifacts) only the zips that `code/` does not have yet. The key changes only when the code does.
+
+```yml
+custom:
+  deploymentSettings:
+    alias: live
+    contentAddressedArtifacts: true
+```
+
+- Serverless still uploads its own copy of the zips to the deploy folder: its "No changes to deploy" check compares them.
+- The bucket's SSE/KMS settings (`provider.deploymentBucketObject`) apply to the uploads.
+- If `HeadObject` fails the zip is uploaded anyway. If the upload fails, the function goes back to the deploy folder's key and the deploy continues.
+- `maxPreviousDeploymentArtifacts` cleanup and `serverless-plugin-s3-remover` only match deploy folders (`<timestamp>-<date>`), so they leave `code/` alone.
+- Do not expire `code/` with a bucket lifecycle rule. A function that has not changed in months still points at an old zip, and if a deploy of that function fails CloudFormation rolls it back to that key: with the zip gone the stack ends in `UPDATE_ROLLBACK_FAILED`. Only a new zip is uploaded when the code changes, so the S3 cost is small. If it grows, clean up by deleting only the keys the current stack does not use.
+- It needs the zips in the same run: `sls deploy --package` on a package built earlier with `sls package` would point at `code/` without ever uploading the zips. Package and deploy in one run.
 
 ### Alias sync
 
