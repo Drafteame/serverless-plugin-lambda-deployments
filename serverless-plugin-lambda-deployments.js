@@ -129,6 +129,8 @@ class ServerlessLambdaDeployments {
       this.contentArtifacts[name] = {
         artifact,
         logicalId,
+        functionName: fn.name,
+        sha: this.artifactDigest(artifact).toString('base64'),
         originalKey: properties.Code.S3Key,
         key: `${prefix}/${this.artifactDigest(artifact).toString('hex')}.zip`
       }
@@ -158,15 +160,23 @@ class ServerlessLambdaDeployments {
     await Promise.all(Array.from({ length: MAX_CONCURRENT_UPLOADS }, worker))
     const count = result => results.filter(r => r === result).length
     this.log.notice(`lambda-deployments: ${count('uploaded')} zips uploaded to code/, ${count('present')} already there, ${count('failed')} failed (deploy folder used)`)
+    if (this.driftedFunctions && this.driftedFunctions.length) {
+      this.log.notice(`lambda-deployments: ${this.driftedFunctions.join(', ')} run code deployed outside CloudFormation, restoring it from the deploy folder`)
+    }
   }
 
   async uploadIfMissing (bucket, key, group) {
+    let present = false
     try {
       await this.awsProvider.request('S3', 'headObject', { Bucket: bucket, Key: key })
-      return 'present'
+      present = true
     } catch (error) {
       // Missing or unreadable, upload it. A missing key is a 404, which the osls shim reports
       // as UnknownError (HEAD responses have no body), so the error is not inspected.
+    }
+    if (present) {
+      await Promise.all(group.map(entry => this.restoreIfDrifted(entry)))
+      return 'present'
     }
     try {
       const { artifact } = group[0]
@@ -185,6 +195,22 @@ class ServerlessLambdaDeployments {
       for (const { logicalId, originalKey } of group) this.compiledTpl.Resources[logicalId].Properties.Code.S3Key = originalKey
       return 'failed'
     }
+  }
+
+  // A zip already in code/ may be the key the stack declares, and then CloudFormation leaves the
+  // function's code alone. If $LATEST runs other code (updated outside CloudFormation, e.g. by
+  // dev-deploy-func), it would stay and the new AWS::Lambda::Version would fail its CodeSha256
+  // check. Such functions, and ones that cannot be read, use the deploy folder's key, which
+  // changes on every deploy, so CloudFormation restores their code. A new function has nothing to restore.
+  async restoreIfDrifted (entry) {
+    try {
+      const { CodeSha256 } = await this.awsProvider.request('Lambda', 'getFunctionConfiguration', { FunctionName: entry.functionName })
+      if (CodeSha256 === entry.sha) return
+    } catch (error) {
+      if (isNotFound(error)) return
+    }
+    this.compiledTpl.Resources[entry.logicalId].Properties.Code.S3Key = entry.originalKey
+    this.driftedFunctions = (this.driftedFunctions || []).concat(entry.functionName)
   }
 
   // Configuration the alias points to, or $LATEST when the alias does not exist yet. Returns
