@@ -158,7 +158,7 @@ describe('ServerlessLambdaDeployments', () => {
 
     it('rewrites the S3Key to the sha256 of the zip', async () => {
       const zip = zipFile('binary')
-      const { resources, key } = await run({ zip, request: async () => ({}) })
+      const { resources, key } = await run({ zip, request: async () => ({ CodeSha256: zip.sha }) })
       expect(resources.ALambdaFunction.Properties.Code.S3Key).to.equal(key)
     })
 
@@ -174,9 +174,57 @@ describe('ServerlessLambdaDeployments', () => {
     })
 
     it('does not upload a zip that code/ already has', async () => {
+      const zip = zipFile('binary')
       const calls = []
-      await run({ request: async (_s, method) => { calls.push(method); return {} } })
-      expect(calls).to.deep.equal(['headObject'])
+      const { resources, key } = await run({ zip, request: async (_s, method) => { calls.push(method); return { CodeSha256: zip.sha } } })
+      expect(calls).to.deep.equal(['headObject', 'getFunctionConfiguration'])
+      expect(resources.ALambdaFunction.Properties.Code.S3Key).to.equal(key)
+    })
+
+    // Full deploy of A, dev-deploy-func of B, full deploy of A again: the stack already declares
+    // A's key, so only a different key makes CloudFormation put A back on $LATEST.
+    it('uses the deploy folder when $LATEST runs code deployed outside CloudFormation', async () => {
+      const zip = zipFile('code A')
+      const other = zipFile('code B')
+      const qualifiers = []
+      const request = async (_s, method, params) => {
+        if (method === 'getFunctionConfiguration') qualifiers.push(params.Qualifier)
+        return method === 'getFunctionConfiguration' ? { CodeSha256: other.sha } : {}
+      }
+      const { resources, plugin } = await run({ zip, request })
+      expect(qualifiers).to.deep.equal([undefined])
+      expect(resources.ALambdaFunction.Properties.Code.S3Key).to.equal(oldKey)
+      expect(plugin.driftedFunctions).to.deep.equal(['svc-dev-a'])
+    })
+
+    it('uses the deploy folder when $LATEST cannot be read', async () => {
+      const request = async (_s, method) => {
+        if (method === 'getFunctionConfiguration') throw Object.assign(new Error('Rate exceeded'), { code: 'THROTTLED' })
+        return {}
+      }
+      const { resources } = await run({ request })
+      expect(resources.ALambdaFunction.Properties.Code.S3Key).to.equal(oldKey)
+    })
+
+    it('keeps the code/ key for a function that does not exist yet', async () => {
+      const request = async (_s, method) => {
+        if (method === 'getFunctionConfiguration') throw notFound()
+        return {}
+      }
+      const { resources, key } = await run({ request })
+      expect(resources.ALambdaFunction.Properties.Code.S3Key).to.equal(key)
+    })
+
+    it('does not read $LATEST for a zip it just uploaded', async () => {
+      const calls = []
+      const request = async (_s, method) => {
+        calls.push(method)
+        if (method === 'headObject') throw new Error('UnknownError')
+        return {}
+      }
+      const { resources, key } = await run({ request })
+      expect(calls).to.deep.equal(['headObject', 'putObject'])
+      expect(resources.ALambdaFunction.Properties.Code.S3Key).to.equal(key)
     })
 
     it('uploads anyway when HeadObject fails', async () => {
