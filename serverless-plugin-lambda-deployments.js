@@ -28,8 +28,13 @@ class ServerlessLambdaDeployments {
       'after:aws:package:finalize:mergeCustomProviderResources': () => {
         this.addDeploymentResources()
         this.addressArtifactsByContent()
+        this.addReleaseOutput()
       },
-      'before:aws:deploy:deploy:uploadArtifacts': this.uploadMissingArtifacts.bind(this),
+      'before:aws:deploy:deploy:uploadArtifacts': async () => {
+        // Serverless reloads the packaged state before deploying, so write it again in the template it will upload.
+        this.addReleaseOutput()
+        await this.uploadMissingArtifacts()
+      },
       'after:deploy:deploy': this.syncAliases.bind(this)
     }
     this.addConfigSchema()
@@ -69,6 +74,16 @@ class ServerlessLambdaDeployments {
     for (const name of this.withDeploymentPreferencesFns) {
       Object.assign(this.compiledTpl.Resources, ...this.buildFunctionResources(name))
     }
+  }
+
+  // releaseOutput: publish the release as the stack Output ReleaseTag instead of a stack tag.
+  // CloudFormation copies stack tags to every resource, so a tag that changes on each release
+  // retags the whole stack; an Output change touches no resource.
+  addReleaseOutput () {
+    const release = this.globalSettings.releaseOutput
+    if (!release || !this.shouldDeploy()) return
+    const tpl = this.compiledTpl
+    tpl.Outputs = Object.assign({}, tpl.Outputs, { ReleaseTag: { Value: String(release) } })
   }
 
   // stableVersions: when a function's zip is byte-identical to the code its alias runs, keep
