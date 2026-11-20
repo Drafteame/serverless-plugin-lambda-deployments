@@ -269,6 +269,45 @@ describe('ServerlessLambdaDeployments', () => {
     })
   })
 
+  describe('releaseOutput', () => {
+    const outputs = plugin => plugin.service.provider.compiledCloudFormationTemplate.Outputs
+
+    it('adds Outputs.ReleaseTag with the value', () => {
+      const plugin = fakePlugin({ settings: { alias: 'live', releaseOutput: 'v1.2.3' } })
+      plugin.addReleaseOutput()
+      expect(outputs(plugin)).to.deep.equal({ ReleaseTag: { Value: 'v1.2.3' } })
+    })
+
+    it('keeps the existing Outputs', () => {
+      const plugin = fakePlugin({ settings: { alias: 'live', releaseOutput: 'v1.2.3' } })
+      plugin.service.provider.compiledCloudFormationTemplate.Outputs = { Other: { Value: 'x' } }
+      plugin.addReleaseOutput()
+      expect(outputs(plugin)).to.deep.equal({ Other: { Value: 'x' }, ReleaseTag: { Value: 'v1.2.3' } })
+    })
+
+    it('adds nothing without the option', () => {
+      const plugin = fakePlugin({ settings: { alias: 'live' } })
+      plugin.addReleaseOutput()
+      expect(outputs(plugin)).to.equal(undefined)
+    })
+
+    it('adds nothing in a stage that is not enabled', () => {
+      const plugin = fakePlugin({ settings: { alias: 'live', releaseOutput: 'v1.2.3', stages: ['prod'] } })
+      plugin.addReleaseOutput()
+      expect(outputs(plugin)).to.equal(undefined)
+    })
+
+    it('writes it in the template Serverless reloaded before deploying', () => {
+      const plugin = fakePlugin({ settings: { alias: 'live', releaseOutput: 'v1.2.3' } })
+      plugin.addReleaseOutput()
+      const reloaded = JSON.parse(JSON.stringify(plugin.service.provider.compiledCloudFormationTemplate))
+      delete reloaded.Outputs
+      plugin.service.provider = { ...plugin.service.provider, compiledCloudFormationTemplate: reloaded }
+      plugin.addReleaseOutput()
+      expect(reloaded.Outputs.ReleaseTag.Value).to.equal('v1.2.3')
+    })
+  })
+
   describe('syncAliases', () => {
     const settings = { alias: 'live', syncAlias: true }
     const stackPages = [

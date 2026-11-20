@@ -2,7 +2,12 @@
   "type": "object",
   "properties": {
     "deploymentSettings": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "releaseOutput": {
+          "type": "string"
+        }
+      }
     }
   }
 }

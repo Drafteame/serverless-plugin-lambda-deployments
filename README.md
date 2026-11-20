@@ -78,6 +78,7 @@ aws lambda update-alias \
 | `stableVersions.variables` | no | Environment variables that carry per-release values (e.g. the release commit). When a function's zip matches the code its alias runs, their deployed values are kept, so the function publishes no new version. See [Stable versions](#stable-versions) |
 | `contentAddressedArtifacts` | no | Name the uploaded zips by their sha256 so unchanged functions keep their `Code.S3Key`. See [Content-addressed artifacts](#content-addressed-artifacts). Default: `false` |
 | `syncAlias` | no | After each deploy, point the alias at the version the stack declares, even if it was moved outside CloudFormation. See [Alias sync](#alias-sync). Default: `false` |
+| `releaseOutput` | no | Release identifier (e.g. `${param:version}`). Adds it to the stack as `Outputs.ReleaseTag`, so a release does not need a stack tag that CloudFormation copies to every resource. Respects `stages`. Only in `custom.deploymentSettings`. Nothing is added when unset |
 
 ### Global defaults
 
